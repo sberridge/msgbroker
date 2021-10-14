@@ -17,6 +17,7 @@ var upgrader = websocket.Upgrader{
 
 type clientConnection struct {
 	id         string
+	name       string
 	connection *websocket.Conn
 }
 
@@ -69,7 +70,7 @@ func handleConnection(con *websocket.Conn, channels channels) {
 		connection: con,
 	}
 
-	authSuccessChan := make(chan *jSONAuthResponse)
+	authSuccessChan := make(chan jSONAuthResponse)
 	authErrorChan := make(chan error)
 
 	go authenticate(con, authSuccessChan, authErrorChan)
@@ -78,9 +79,23 @@ func handleConnection(con *websocket.Conn, channels channels) {
 
 	select {
 	case authResponse := <-authSuccessChan:
-		fmt.Println(authResponse)
+		client.id = authResponse.UniqueId
+		client.name = authResponse.Name
+		successResponse, _ := json.Marshal(jSONCommunication{
+			Action:  "authentication successful",
+			Message: "",
+			Data:    authResponse,
+		})
+		sendMessage(con, string(successResponse), nil, nil)
 	case err := <-authErrorChan:
 		fmt.Printf("errored authenticating, %s", err.Error())
+		if err.Error() == "client exists" {
+			failResponse, _ := json.Marshal(jSONCommunication{
+				Action:  "authentication failed",
+				Message: "Client already exists",
+			})
+			sendMessage(con, string(failResponse), nil, nil)
+		}
 		con.Close()
 		return
 	case <-timeout:
