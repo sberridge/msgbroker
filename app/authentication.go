@@ -54,12 +54,13 @@ func authenticate(con *websocket.Conn, authSuccessChan chan jSONAuthResponse, au
 	}
 	fmt.Println(authResponse)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	client, err := mongoConnect()
+
 	if err != nil {
 		fmt.Println(err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	defer client.Disconnect(ctx)
 	col := client.Database("message-broker").Collection("clients")
 
@@ -75,7 +76,6 @@ func authenticate(con *websocket.Conn, authSuccessChan chan jSONAuthResponse, au
 		findOptions := options.FindOne().SetProjection(findProjection)
 		err = col.FindOne(ctx, filter, findOptions).Decode(&clientResult)
 		if err == mongo.ErrNoDocuments {
-			fmt.Println("no results yo")
 			id := uuid.New().String()
 			_, err := col.InsertOne(ctx, bson.D{primitive.E{Key: "id", Value: id}, primitive.E{Key: "name", Value: name}})
 			if err != nil {
@@ -108,7 +108,6 @@ func authenticate(con *websocket.Conn, authSuccessChan chan jSONAuthResponse, au
 		err = col.FindOne(ctx, filter, findOptions).Decode(&clientResult)
 
 		if err == mongo.ErrNoDocuments {
-			fmt.Println("no results yo")
 			authErrorChan <- errors.New("client not found")
 			return
 		} else if err != nil {
