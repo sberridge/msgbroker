@@ -8,61 +8,66 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-func authenticate(con *websocket.Conn, authSuccessChan chan jSONAuthResponse, authErrorChan chan error) {
+func authenticate(client *clientConnection, authSuccessChan chan bool, authErrorChan chan error) {
 
-	errChan := make(chan error)
-	successChan := make(chan bool)
-	authMessage, _ := json.Marshal(jSONCommunication{
+	authMessage := jSONCommunication{
 		Action:  "authenticate",
 		Message: "Please authenticate",
-	})
+	}
 
-	go sendMessage(con, string(authMessage), successChan, errChan)
+	successError := errorSuccess{
+		errorChannel:   make(chan error),
+		successChannel: make(chan bool),
+	}
+
+	go client.send(authMessage, successError)
 
 	select {
-	case err := <-errChan:
+	case err := <-successError.errorChannel:
 		authErrorChan <- err
-		fmt.Printf("errored requesting auth, %s", err.Error())
 		return
-	case <-successChan:
+	case <-successError.successChannel:
 
 	}
-
-	_, message, err := con.ReadMessage()
-	if err != nil {
-		fmt.Printf("errored receiving auth, %s", err.Error())
+	var message string
+	timeout := time.After(time.Second * 30)
+	select {
+	case message = <-client.receiveChannel:
+	case <-timeout:
+		client.send(jSONCommunication{
+			Action:  "authentication failed",
+			Message: "Authentication timed out",
+		}, errorSuccess{})
+		authErrorChan <- errors.New("authentication timed out")
 		return
 	}
+
 	authResponse := jSONAuthResponse{}
-	err = json.Unmarshal(message, &authResponse)
+	err := json.Unmarshal([]byte(message), &authResponse)
 	if err != nil {
-		fmt.Printf("failed reading auth response, %s", err.Error())
-		failResponse, _ := json.Marshal(jSONCommunication{
+		client.send(jSONCommunication{
 			Action:  "authentication failed",
 			Message: "Failed authentication",
-		})
-		sendMessage(con, string(failResponse), nil, nil)
+		}, errorSuccess{})
 		authErrorChan <- err
 		return
 	}
-	fmt.Println(authResponse)
 
-	client, err := mongoConnect()
+	mongoClient, err := mongoConnect()
 
 	if err != nil {
 		fmt.Println(err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	defer client.Disconnect(ctx)
-	col := client.Database("message-broker").Collection("clients")
+	defer mongoClient.Disconnect(ctx)
+	col := mongoClient.Database("message-broker").Collection("clients")
 
 	if authResponse.Register {
 		name := authResponse.Name
@@ -79,21 +84,37 @@ func authenticate(con *websocket.Conn, authSuccessChan chan jSONAuthResponse, au
 			id := uuid.New().String()
 			_, err := col.InsertOne(ctx, bson.D{primitive.E{Key: "id", Value: id}, primitive.E{Key: "name", Value: name}})
 			if err != nil {
-				fmt.Println(err.Error())
+				client.send(jSONCommunication{
+					Action:  "authentication failed",
+					Message: "Failed creating client",
+				}, errorSuccess{})
 				authErrorChan <- err
 				return
 			}
-			response := jSONAuthResponse{
-				Register: true,
-				Name:     name,
-				UniqueId: id,
-			}
-			authSuccessChan <- response
+			client.id = id
+			client.send(jSONCommunication{
+				Action: "authentication successful",
+				Data: jSONAuthResponse{
+					Register: true,
+					Name:     name,
+					UniqueId: id,
+				},
+			}, errorSuccess{})
+
+			authSuccessChan <- true
 			return
 		} else if err != nil {
+			client.send(jSONCommunication{
+				Action:  "authentication failed",
+				Message: "Error occurred",
+			}, errorSuccess{})
 			authErrorChan <- err
 			return
 		}
+		client.send(jSONCommunication{
+			Action:  "authentication failed",
+			Message: "Client already exists",
+		}, errorSuccess{})
 		authErrorChan <- errors.New("client exists")
 	} else {
 		id := authResponse.UniqueId
@@ -108,25 +129,46 @@ func authenticate(con *websocket.Conn, authSuccessChan chan jSONAuthResponse, au
 		err = col.FindOne(ctx, filter, findOptions).Decode(&clientResult)
 
 		if err == mongo.ErrNoDocuments {
+			client.send(jSONCommunication{
+				Action:  "authentication failed",
+				Message: "Incorrect credentials",
+			}, errorSuccess{})
 			authErrorChan <- errors.New("client not found")
 			return
 		} else if err != nil {
+			client.send(jSONCommunication{
+				Action:  "authentication failed",
+				Message: "Error occurred",
+			}, errorSuccess{})
 			authErrorChan <- err
 			return
 		}
+
 		clientId := clientResult["id"]
 		clientName := clientResult["name"]
 
 		response := jSONAuthResponse{}
 		switch v := clientId.(type) {
 		case string:
+			client.id = v
 			response.UniqueId = v
 		}
 		switch v := clientName.(type) {
 		case string:
+			client.name = v
 			response.Name = v
 		}
-		authSuccessChan <- response
+		go client.send(jSONCommunication{
+			Action: "authentication successful",
+			Data:   response,
+		}, successError)
+		select {
+		case <-successError.errorChannel:
+			authErrorChan <- errors.New("failed to notify success")
+		case <-successError.successChannel:
+			authSuccessChan <- true
+		}
+
 	}
 
 }
