@@ -15,55 +15,58 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
+//struct for reusable success/error channel responses
 type errorSuccess struct {
 	successChannel chan bool
 	errorChannel   chan error
 }
 
+//struct to define JSON messages sent to and from the client
 type jSONCommunication struct {
 	Action  string      `json:"action"`
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
 }
 
-type jSONAuthResponse struct {
-	Register bool   `json:"register"`
-	Name     string `json:"name"`
-	UniqueId string `json:"id"`
-}
-
+//struct sent to the send channel with the message to be sent + the error/success response channels
 type sendRequest struct {
 	message      interface{}
 	errorSuccess errorSuccess
 }
 
+//struct for managing a client connection
 type clientConnection struct {
-	id                   string
-	name                 string
-	connection           *websocket.Conn
-	sendChannel          chan sendRequest
-	sendClosedChannel    chan bool
-	receiveClosedChannel chan bool
-	receiveChannel       chan string
+	id                   string           //unique ID of the client
+	name                 string           //unique name of the client
+	connection           *websocket.Conn  //websocket connection
+	sendChannel          chan sendRequest //channel used to send message requests to the send loop
+	sendClosedChannel    chan bool        //channel used to control exiting the send loop when the websocket connection closes
+	receiveClosedChannel chan bool        //channel used to control exiting the receive loop when the websocket connection closes
+	receiveChannel       chan string      //channel messages received in the receive loop are sent out on to be processed
 }
 
+//loop for messages received via the websocket connection
 func (client *clientConnection) receiveLoop(managerChannels connectionManagerChannels) {
 	for {
 		_, message, err := client.connection.ReadMessage()
 		if err != nil {
+			//errored so we've lost connection
 			managerChannels.lostConnection <- client
 			client.close()
 			return
 		}
+
+		//got a message, send it out on the channel
 		client.receiveChannel <- string(message)
 	}
 }
 
+//loop to handle sending messages out via the websocket connection
 func (client *clientConnection) sendLoop() {
 	closed := false
 	for {
 		select {
-		case msg := <-client.sendChannel:
+		case msg := <-client.sendChannel: //received request to send out a message
 			jsonMsg, err := json.Marshal(msg.message)
 			if err != nil {
 				msg.errorSuccess.errorChannel <- err
@@ -79,7 +82,7 @@ func (client *clientConnection) sendLoop() {
 			if msg.errorSuccess.successChannel != nil {
 				msg.errorSuccess.successChannel <- true
 			}
-		case <-client.sendClosedChannel:
+		case <-client.sendClosedChannel: //received instruction to exit the loop as the websocket connection has closed
 			closed = true
 		}
 		if closed {
@@ -88,62 +91,55 @@ func (client *clientConnection) sendLoop() {
 	}
 }
 
+//request to send a message to the client
 func (client *clientConnection) send(message interface{}, customErrorSuccess errorSuccess) {
+	//create channels to receive response from the send loop
 	thisErrorSuccess := errorSuccess{
 		errorChannel:   make(chan error),
 		successChannel: make(chan bool),
 	}
-	client.sendChannel <- sendRequest{
-		message:      message,
-		errorSuccess: thisErrorSuccess,
+
+	go func(errSuccess errorSuccess) {
+		//send the message request to the send loop
+		client.sendChannel <- sendRequest{
+			message:      message,
+			errorSuccess: errSuccess,
+		}
+	}(thisErrorSuccess)
+
+	if customErrorSuccess.errorChannel != nil || customErrorSuccess.successChannel != nil {
+		select {
+		case err := <-thisErrorSuccess.errorChannel: //received an error
+			if customErrorSuccess.errorChannel != nil {
+				customErrorSuccess.errorChannel <- err //if the requester supplied us with a channel then send the error out
+			}
+		case <-thisErrorSuccess.successChannel: //successfully sent the message
+			if customErrorSuccess.successChannel != nil {
+				customErrorSuccess.successChannel <- true //if the requester supplied us with a channel then send the success response
+			}
+		}
 	}
 
-	select {
-	case err := <-thisErrorSuccess.errorChannel:
-		if customErrorSuccess.errorChannel != nil {
-			customErrorSuccess.errorChannel <- err
-		}
-	case <-thisErrorSuccess.successChannel:
-		if customErrorSuccess.successChannel != nil {
-			customErrorSuccess.successChannel <- true
-		}
-	}
 }
 
+//close the websocket connection
 func (client *clientConnection) close() {
 	client.connection.Close()
 	timeout := time.After(time.Second * 5)
 	select {
-	case client.receiveClosedChannel <- true:
+	case client.receiveClosedChannel <- true: //tell the receive loop to stop
 	case <-timeout:
 	}
 
 	timeout = time.After(time.Second * 5)
 	select {
-	case client.sendClosedChannel <- true:
+	case client.sendClosedChannel <- true: //tell the send loop to stop
 	case <-timeout:
 	}
 
 }
 
-type connectionManagerChannels struct {
-	newConnection  chan *clientConnection
-	lostConnection chan *clientConnection
-}
-
-func connectionManager(channels connectionManagerChannels) {
-	connections := make(map[string]*clientConnection)
-	for {
-		select {
-		case newCon := <-channels.newConnection:
-			connections[newCon.id] = newCon
-		case lostCon := <-channels.lostConnection:
-			delete(connections, lostCon.id)
-		}
-	}
-}
-
-func handleClientMessages(client *clientConnection) {
+func clientMessagesLoop(client *clientConnection) {
 	closed := false
 	for {
 		select {
@@ -157,7 +153,7 @@ func handleClientMessages(client *clientConnection) {
 				}, errorSuccess{})
 				continue
 			}
-			fmt.Println(message)
+			fmt.Println(jsonMsg)
 		case <-client.receiveClosedChannel:
 			closed = true
 		}
@@ -167,6 +163,27 @@ func handleClientMessages(client *clientConnection) {
 	}
 }
 
+//channels for the connection manager
+type connectionManagerChannels struct {
+	newConnection  chan *clientConnection //receive new client connections
+	lostConnection chan *clientConnection //channel to remove closed client connections
+}
+
+//manage client connections
+func connectionManager(channels connectionManagerChannels) {
+	//map to store open connections
+	connections := make(map[string]*clientConnection)
+	for {
+		select {
+		case newCon := <-channels.newConnection: //received a new client connection, add it to the map
+			connections[newCon.id] = newCon
+		case lostCon := <-channels.lostConnection: //lost a client connection, remove it from the map
+			delete(connections, lostCon.id)
+		}
+	}
+}
+
+//handle setting up and authenticating a new client connection
 func handleConnection(con *websocket.Conn, managerChannels connectionManagerChannels) {
 	client := clientConnection{
 		id:                   uuid.New().String(),
@@ -177,36 +194,52 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 		sendClosedChannel:    make(chan bool),
 	}
 
+	//start the receive messages loop
 	go client.receiveLoop(managerChannels)
+
+	//start the send message loop
 	go client.sendLoop()
 
-	authSuccessChan := make(chan bool)
-	authErrorChan := make(chan error)
+	//authentication channels
+	authChannels := errorSuccess{
+		errorChannel:   make(chan error),
+		successChannel: make(chan bool),
+	}
 
-	go authenticate(&client, authSuccessChan, authErrorChan)
+	//authenticate the client connection
+	go authenticate(&client, authChannels)
 
 	select {
-	case <-authSuccessChan:
-	case <-authErrorChan:
+	case <-authChannels.successChannel: //authed!
+	case <-authChannels.errorChannel: //not authed, close the connection
 		client.close()
 		return
 	}
 
+	//add authed client to the manager
 	managerChannels.newConnection <- &client
-	go handleClientMessages(&client)
+
+	//start receiving messages from the client
+	go clientMessagesLoop(&client)
 }
 
 func main() {
+	//channels for the client manager
 	channels := connectionManagerChannels{
 		newConnection:  make(chan *clientConnection),
 		lostConnection: make(chan *clientConnection),
 	}
+	//start the client manager
 	go connectionManager(channels)
+
+	//route to open a websocket connection
 	http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
+		//hijack the request and turn it into a websocket connection
 		con, err := upgrader.Upgrade(rw, r, nil)
 		if err != nil {
 			fmt.Println(err.Error())
 		} else {
+			//start handling the connection
 			go handleConnection(con, channels)
 		}
 	})
