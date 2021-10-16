@@ -1,17 +1,14 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 //response sent to and from the client during authentication
@@ -22,7 +19,7 @@ type jSONAuthResponse struct {
 }
 
 //authenticate a client connection
-func authenticate(client *clientConnection, authChannels errorSuccess) {
+func authenticate(client *clientConnection, authChannels errorSuccess, mongoManager *mongoManager) {
 
 	successError := errorSuccess{
 		errorChannel:   make(chan error),
@@ -50,7 +47,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 	case message = <-client.receiveChannel:
 	case <-timeout:
 		client.send(jSONCommunication{
-			Action:  "authentication failed",
+			Action:  "authentication_failed",
 			Message: "Authentication timed out",
 		}, errorSuccess{})
 		authChannels.errorChannel <- errors.New("authentication timed out")
@@ -62,28 +59,15 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 	if err != nil {
 		//failed parsing response
 		client.send(jSONCommunication{
-			Action:  "authentication failed",
+			Action:  "authentication_failed",
 			Message: "Failed authentication",
 		}, errorSuccess{})
 		authChannels.errorChannel <- err
 		return
 	}
 
-	//open mongodb connection
-	mongoClient, err := mongoConnect()
-
-	//failed to connect to mongo
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	//setup closing the db connection
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	defer mongoClient.Disconnect(ctx)
-
 	//open collection containing client details
-	col := mongoClient.Database("message-broker").Collection("clients")
+	col := mongoManager.connection.Database("message-broker").Collection("clients")
 
 	//if creating a new client
 	if authResponse.Register {
@@ -92,23 +76,19 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 		name := authResponse.Name
 
 		filter := bson.D{primitive.E{Key: "name", Value: name}}
-		clientResult := bson.M{}
-
-		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
 		findProjection := bson.D{primitive.E{Key: "id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "_id", Value: 0}}
-		findOptions := options.FindOne().SetProjection(findProjection)
-		err = col.FindOne(ctx, filter, findOptions).Decode(&clientResult)
+		_, err := mongoFindOne(col, findProjection, filter)
+
 		if err == mongo.ErrNoDocuments {
 
 			//client is not in the collection so inserting a new record
 			id := uuid.New().String()
-			_, err := col.InsertOne(ctx, bson.D{primitive.E{Key: "id", Value: id}, primitive.E{Key: "name", Value: name}})
+			_, err := mongoInsertOne(col, bson.D{primitive.E{Key: "id", Value: id}, primitive.E{Key: "name", Value: name}})
 			if err != nil {
 
 				//failed inserting the client record
 				client.send(jSONCommunication{
-					Action:  "authentication failed",
+					Action:  "authentication_failed",
 					Message: "Failed creating client",
 				}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
 				authChannels.errorChannel <- err
@@ -120,7 +100,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 
 			//request to send message to the client with their new details
 			client.send(jSONCommunication{
-				Action: "authentication successful",
+				Action: "authentication_successful",
 				Data: jSONAuthResponse{
 					Register: true,
 					Name:     name,
@@ -133,7 +113,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 		} else if err != nil {
 			//failed due to db error
 			client.send(jSONCommunication{
-				Action:  "authentication failed",
+				Action:  "authentication_failed",
 				Message: "Error occurred",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
 			authChannels.errorChannel <- err
@@ -142,7 +122,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 
 		//client already exists
 		client.send(jSONCommunication{
-			Action:  "authentication failed",
+			Action:  "authentication_failed",
 			Message: "Client already exists",
 		}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
 		authChannels.errorChannel <- errors.New("client exists")
@@ -153,19 +133,14 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 		id := authResponse.UniqueId
 
 		filter := bson.D{primitive.E{Key: "id", Value: id}}
-		clientResult := bson.M{}
-
-		ctx, cancel = context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
 		findProjection := bson.D{primitive.E{Key: "id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "_id", Value: 0}}
-		findOptions := options.FindOne().SetProjection(findProjection)
-		err = col.FindOne(ctx, filter, findOptions).Decode(&clientResult)
+		clientResult, err := mongoFindOne(col, findProjection, filter)
 
 		if err == mongo.ErrNoDocuments {
 
 			//not found
 			client.send(jSONCommunication{
-				Action:  "authentication failed",
+				Action:  "authentication_failed",
 				Message: "Incorrect credentials",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
 			authChannels.errorChannel <- errors.New("client not found")
@@ -174,7 +149,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 
 			//db error
 			client.send(jSONCommunication{
-				Action:  "authentication failed",
+				Action:  "authentication_failed",
 				Message: "Error occurred",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
 			authChannels.errorChannel <- err
@@ -201,7 +176,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess) {
 
 		//request to send success message to the clients
 		go client.send(jSONCommunication{
-			Action: "authentication successful",
+			Action: "authentication_successful",
 			Data:   response,
 		}, successError) //this time we do want to check the response so we're supplying channels
 		select {

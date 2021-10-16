@@ -139,7 +139,16 @@ func (client *clientConnection) close() {
 
 }
 
-func clientMessagesLoop(client *clientConnection) {
+type newProviderData struct {
+	Name string `json:"name"`
+}
+type newProviderRequest struct {
+	Action  string          `json:"action"`
+	Message string          `json:"message"`
+	Data    newProviderData `json:"data"`
+}
+
+func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 	closed := false
 	for {
 		select {
@@ -148,12 +157,35 @@ func clientMessagesLoop(client *clientConnection) {
 			err := json.Unmarshal([]byte(message), &jsonMsg)
 			if err != nil {
 				client.send(jSONCommunication{
-					Action:  "invalid message",
+					Action:  "invalid_message",
 					Message: "The message sent was incorrectly formatted",
 				}, errorSuccess{})
 				continue
 			}
-			fmt.Println(jsonMsg)
+			switch jsonMsg.Action {
+			case "register_provider":
+				newProviderRequest := newProviderRequest{}
+				err := json.Unmarshal([]byte(message), &newProviderRequest)
+				if err != nil {
+					client.send(jSONCommunication{
+						Action:  "failed_registering_provider",
+						Message: "Invalid json format",
+					}, errorSuccess{})
+				}
+				provider, err := newProvider(client, newProviderRequest.Data, mongoManager)
+				if err != nil {
+					client.send(jSONCommunication{
+						Action:  "failed_registering_provider",
+						Message: err.Error(),
+					}, errorSuccess{})
+				} else {
+					client.send(jSONCommunication{
+						Action: "provider_registered",
+						Data:   provider,
+					}, errorSuccess{})
+				}
+
+			}
 		case <-client.receiveClosedChannel:
 			closed = true
 		}
@@ -184,7 +216,7 @@ func connectionManager(channels connectionManagerChannels) {
 }
 
 //handle setting up and authenticating a new client connection
-func handleConnection(con *websocket.Conn, managerChannels connectionManagerChannels) {
+func handleConnection(con *websocket.Conn, managerChannels connectionManagerChannels, mongoManager *mongoManager) {
 	client := clientConnection{
 		id:                   uuid.New().String(),
 		connection:           con,
@@ -207,7 +239,7 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	}
 
 	//authenticate the client connection
-	go authenticate(&client, authChannels)
+	go authenticate(&client, authChannels, mongoManager)
 
 	select {
 	case <-authChannels.successChannel: //authed!
@@ -220,7 +252,7 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	managerChannels.newConnection <- &client
 
 	//start receiving messages from the client
-	go clientMessagesLoop(&client)
+	go clientMessagesLoop(&client, mongoManager)
 }
 
 func main() {
@@ -228,6 +260,11 @@ func main() {
 	channels := connectionManagerChannels{
 		newConnection:  make(chan *clientConnection),
 		lostConnection: make(chan *clientConnection),
+	}
+
+	mongoManager, err := startMongo()
+	if err != nil {
+		fmt.Printf("Failed opening mongo connection, %s", err.Error())
 	}
 	//start the client manager
 	go connectionManager(channels)
@@ -240,7 +277,7 @@ func main() {
 			fmt.Println(err.Error())
 		} else {
 			//start handling the connection
-			go handleConnection(con, channels)
+			go handleConnection(con, channels, mongoManager)
 		}
 	})
 
