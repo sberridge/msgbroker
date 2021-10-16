@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -19,11 +20,31 @@ type errorSuccess struct {
 	errorChannel   chan error
 }
 
+type jSONCommunication struct {
+	Action  string      `json:"action"`
+	Message string      `json:"message,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
+}
+
+type jSONAuthResponse struct {
+	Register bool   `json:"register"`
+	Name     string `json:"name"`
+	UniqueId string `json:"id"`
+}
+
+type sendRequest struct {
+	message      interface{}
+	errorSuccess errorSuccess
+}
+
 type clientConnection struct {
-	id             string
-	name           string
-	connection     *websocket.Conn
-	receiveChannel chan string
+	id                   string
+	name                 string
+	connection           *websocket.Conn
+	sendChannel          chan sendRequest
+	sendClosedChannel    chan bool
+	receiveClosedChannel chan bool
+	receiveChannel       chan string
 }
 
 func (client *clientConnection) receiveLoop(managerChannels connectionManagerChannels) {
@@ -31,34 +52,78 @@ func (client *clientConnection) receiveLoop(managerChannels connectionManagerCha
 		_, message, err := client.connection.ReadMessage()
 		if err != nil {
 			managerChannels.lostConnection <- client
+			client.close()
 			return
 		}
 		client.receiveChannel <- string(message)
 	}
 }
 
-func (client *clientConnection) send(message interface{}, errorSuccess errorSuccess) {
-	msg, err := json.Marshal(message)
-	if err != nil {
-		if errorSuccess.errorChannel != nil {
-			errorSuccess.errorChannel <- err
+func (client *clientConnection) sendLoop() {
+	closed := false
+	for {
+		select {
+		case msg := <-client.sendChannel:
+			jsonMsg, err := json.Marshal(msg.message)
+			if err != nil {
+				msg.errorSuccess.errorChannel <- err
+				return
+			}
+			err = client.connection.WriteMessage(websocket.TextMessage, jsonMsg)
+			if err != nil {
+				if msg.errorSuccess.errorChannel != nil {
+					msg.errorSuccess.errorChannel <- err
+				}
+				return
+			}
+			if msg.errorSuccess.successChannel != nil {
+				msg.errorSuccess.successChannel <- true
+			}
+		case <-client.sendClosedChannel:
+			closed = true
 		}
-		return
-	}
-	err = client.connection.WriteMessage(websocket.TextMessage, msg)
-	if err != nil {
-		if errorSuccess.errorChannel != nil {
-			errorSuccess.errorChannel <- err
+		if closed {
+			break
 		}
-		return
 	}
-	if errorSuccess.successChannel != nil {
-		errorSuccess.successChannel <- true
+}
+
+func (client *clientConnection) send(message interface{}, customErrorSuccess errorSuccess) {
+	thisErrorSuccess := errorSuccess{
+		errorChannel:   make(chan error),
+		successChannel: make(chan bool),
+	}
+	client.sendChannel <- sendRequest{
+		message:      message,
+		errorSuccess: thisErrorSuccess,
+	}
+
+	select {
+	case err := <-thisErrorSuccess.errorChannel:
+		if customErrorSuccess.errorChannel != nil {
+			customErrorSuccess.errorChannel <- err
+		}
+	case <-thisErrorSuccess.successChannel:
+		if customErrorSuccess.successChannel != nil {
+			customErrorSuccess.successChannel <- true
+		}
 	}
 }
 
 func (client *clientConnection) close() {
 	client.connection.Close()
+	timeout := time.After(time.Second * 5)
+	select {
+	case client.receiveClosedChannel <- true:
+	case <-timeout:
+	}
+
+	timeout = time.After(time.Second * 5)
+	select {
+	case client.sendClosedChannel <- true:
+	case <-timeout:
+	}
+
 }
 
 type connectionManagerChannels struct {
@@ -78,26 +143,42 @@ func connectionManager(channels connectionManagerChannels) {
 	}
 }
 
-type jSONCommunication struct {
-	Action  string      `json:"action"`
-	Message string      `json:"message"`
-	Data    interface{} `json:"data,omitempty"`
-}
-
-type jSONAuthResponse struct {
-	Register bool   `json:"register"`
-	Name     string `json:"name"`
-	UniqueId string `json:"id"`
+func handleClientMessages(client *clientConnection) {
+	closed := false
+	for {
+		select {
+		case message := <-client.receiveChannel:
+			jsonMsg := jSONCommunication{}
+			err := json.Unmarshal([]byte(message), &jsonMsg)
+			if err != nil {
+				client.send(jSONCommunication{
+					Action:  "invalid message",
+					Message: "The message sent was incorrectly formatted",
+				}, errorSuccess{})
+				continue
+			}
+			fmt.Println(message)
+		case <-client.receiveClosedChannel:
+			closed = true
+		}
+		if closed {
+			break
+		}
+	}
 }
 
 func handleConnection(con *websocket.Conn, managerChannels connectionManagerChannels) {
 	client := clientConnection{
-		id:             uuid.New().String(),
-		connection:     con,
-		receiveChannel: make(chan string),
+		id:                   uuid.New().String(),
+		connection:           con,
+		receiveChannel:       make(chan string),
+		sendChannel:          make(chan sendRequest),
+		receiveClosedChannel: make(chan bool),
+		sendClosedChannel:    make(chan bool),
 	}
 
 	go client.receiveLoop(managerChannels)
+	go client.sendLoop()
 
 	authSuccessChan := make(chan bool)
 	authErrorChan := make(chan error)
@@ -112,7 +193,7 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	}
 
 	managerChannels.newConnection <- &client
-
+	go handleClientMessages(&client)
 }
 
 func main() {
