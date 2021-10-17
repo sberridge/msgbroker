@@ -8,6 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 var upgrader = websocket.Upgrader{
@@ -107,16 +109,14 @@ func (client *clientConnection) send(message interface{}, customErrorSuccess err
 		}
 	}(thisErrorSuccess)
 
-	if customErrorSuccess.errorChannel != nil || customErrorSuccess.successChannel != nil {
-		select {
-		case err := <-thisErrorSuccess.errorChannel: //received an error
-			if customErrorSuccess.errorChannel != nil {
-				customErrorSuccess.errorChannel <- err //if the requester supplied us with a channel then send the error out
-			}
-		case <-thisErrorSuccess.successChannel: //successfully sent the message
-			if customErrorSuccess.successChannel != nil {
-				customErrorSuccess.successChannel <- true //if the requester supplied us with a channel then send the success response
-			}
+	select {
+	case err := <-thisErrorSuccess.errorChannel: //received an error
+		if customErrorSuccess.errorChannel != nil {
+			customErrorSuccess.errorChannel <- err //if the requester supplied us with a channel then send the error out
+		}
+	case <-thisErrorSuccess.successChannel: //successfully sent the message
+		if customErrorSuccess.successChannel != nil {
+			customErrorSuccess.successChannel <- true //if the requester supplied us with a channel then send the success response
 		}
 	}
 
@@ -139,13 +139,24 @@ func (client *clientConnection) close() {
 
 }
 
-type newProviderData struct {
+type newPublisherData struct {
 	Name string `json:"name"`
 }
-type newProviderRequest struct {
-	Action  string          `json:"action"`
-	Message string          `json:"message"`
-	Data    newProviderData `json:"data"`
+type newPublisherRequest struct {
+	Action  string           `json:"action"`
+	Message string           `json:"message"`
+	Data    newPublisherData `json:"data"`
+}
+
+type publishMessageData struct {
+	Publisher_id string `json:"publisher_id"`
+	Ttl          int64  `json:"ttl"`
+	Payload      string `json:"payload"`
+}
+type publishMessageRequest struct {
+	Action  string             `json:"action"`
+	Message string             `json:"message"`
+	Data    publishMessageData `json:"data"`
 }
 
 func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
@@ -163,28 +174,50 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				continue
 			}
 			switch jsonMsg.Action {
-			case "register_provider":
-				newProviderRequest := newProviderRequest{}
-				err := json.Unmarshal([]byte(message), &newProviderRequest)
+			case "register_publisher":
+				newPublisherRequest := newPublisherRequest{}
+				err := json.Unmarshal([]byte(message), &newPublisherRequest)
 				if err != nil {
 					client.send(jSONCommunication{
-						Action:  "failed_registering_provider",
+						Action:  "failed_registering_publisher",
 						Message: "Invalid json format",
 					}, errorSuccess{})
 				}
-				provider, err := newProvider(client, newProviderRequest.Data, mongoManager)
+				publisher, err := newPublisher(client, newPublisherRequest.Data, mongoManager)
 				if err != nil {
 					client.send(jSONCommunication{
-						Action:  "failed_registering_provider",
+						Action:  "failed_registering_publisher",
 						Message: err.Error(),
 					}, errorSuccess{})
 				} else {
 					client.send(jSONCommunication{
-						Action: "provider_registered",
-						Data:   provider,
+						Action: "publisher_registered",
+						Data:   publisher,
 					}, errorSuccess{})
 				}
+			case "publish_message":
+				publishMessageRequest := publishMessageRequest{}
+				err := json.Unmarshal([]byte(message), &publishMessageRequest)
+				if err != nil {
+					client.send(jSONCommunication{
+						Action:  "failed_publishing_message",
+						Message: "Invalid json format",
+					}, errorSuccess{})
+				}
+				publishedMessage, err := publishMessage(client, publishMessageRequest.Data, mongoManager)
+				if publishedMessage {
 
+					client.send(jSONCommunication{
+						Action:  "message_published",
+						Message: "Message published",
+					}, errorSuccess{})
+					fmt.Println("done")
+				} else {
+					client.send(jSONCommunication{
+						Action:  "failed_publishing_message",
+						Message: err.Error(),
+					}, errorSuccess{})
+				}
 			}
 		case <-client.receiveClosedChannel:
 			closed = true
@@ -192,6 +225,49 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 		if closed {
 			break
 		}
+	}
+}
+
+func handleExpiredMessages(mongoManager *mongoManager) {
+
+	for {
+		filter := bson.D{
+			primitive.E{Key: "messages", Value: bson.D{
+				primitive.E{Key: "$all", Value: bson.A{
+					bson.D{primitive.E{Key: "$elemMatch", Value: bson.D{
+						primitive.E{Key: "ttl", Value: bson.D{
+							primitive.E{Key: "$lt", Value: time.Now().Unix()},
+							primitive.E{Key: "$ne", Value: 0},
+						},
+						},
+					},
+					},
+					},
+				},
+				},
+			},
+			},
+		}
+
+		update := bson.D{
+			primitive.E{Key: "$pull", Value: bson.D{
+				primitive.E{Key: "messages", Value: bson.D{
+					primitive.E{Key: "ttl", Value: bson.D{
+						primitive.E{Key: "$lt", Value: time.Now().Unix()},
+						primitive.E{Key: "$ne", Value: 0},
+					},
+					},
+				},
+				},
+			},
+			},
+		}
+		col := mongoManager.connection.Database("message-broker").Collection("publishers")
+		_, err := mongoUpdateMany(col, filter, update)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
+		<-time.After(time.Second * 30)
 	}
 }
 
@@ -268,6 +344,8 @@ func main() {
 	}
 	//start the client manager
 	go connectionManager(channels)
+
+	go handleExpiredMessages(mongoManager)
 
 	//route to open a websocket connection
 	http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
