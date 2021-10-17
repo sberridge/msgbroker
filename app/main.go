@@ -45,6 +45,57 @@ type clientConnection struct {
 	sendClosedChannel    chan bool        //channel used to control exiting the send loop when the websocket connection closes
 	receiveClosedChannel chan bool        //channel used to control exiting the receive loop when the websocket connection closes
 	receiveChannel       chan string      //channel messages received in the receive loop are sent out on to be processed
+	subscriptionManager  *subscriptionManager
+}
+
+type subscriptionManager struct {
+	subscriptions             map[string]*subscription
+	newSubscriptionChannel    chan *subscription
+	removeSubscriptionChannel chan string
+	cancelReceiveChannel      chan bool
+	cancelManagerChannel      chan bool
+}
+
+func (subManager *subscriptionManager) receiveLoop() {
+	closed := false
+	for {
+		for _, sub := range subManager.subscriptions {
+			select {
+			case messages := <-sub.messagesChannel:
+				fmt.Println(messages)
+			case <-subManager.cancelReceiveChannel:
+				closed = true
+			}
+			if closed {
+				break
+			}
+		}
+		if closed {
+			break
+		}
+	}
+}
+
+func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
+	closed := false
+	for {
+		select {
+		case sub := <-subManager.newSubscriptionChannel:
+			go sub.loop(mongoManager)
+			subManager.subscriptions[sub.id] = sub
+		case subId := <-subManager.removeSubscriptionChannel:
+			delete(subManager.subscriptions, subId)
+		case <-subManager.cancelManagerChannel:
+			subManager.cancelReceiveChannel <- true
+			for _, sub := range subManager.subscriptions {
+				sub.cancelChannel <- true
+			}
+			closed = true
+		}
+		if closed {
+			break
+		}
+	}
 }
 
 //loop for messages received via the websocket connection
@@ -137,26 +188,41 @@ func (client *clientConnection) close() {
 	case <-timeout:
 	}
 
+	timeout = time.After(time.Second * 5)
+	select {
+	case client.subscriptionManager.cancelManagerChannel <- true: //tell the sub manager to stop
+	case <-timeout:
+	}
+
 }
 
-type newPublisherData struct {
+type newPublisherRequestData struct {
 	Name string `json:"name"`
 }
 type newPublisherRequest struct {
-	Action  string           `json:"action"`
-	Message string           `json:"message"`
-	Data    newPublisherData `json:"data"`
+	Action  string                  `json:"action"`
+	Message string                  `json:"message"`
+	Data    newPublisherRequestData `json:"data"`
 }
 
-type publishMessageData struct {
+type publishMessageRequestData struct {
 	Publisher_id string `json:"publisher_id"`
 	Ttl          int64  `json:"ttl"`
 	Payload      string `json:"payload"`
 }
 type publishMessageRequest struct {
-	Action  string             `json:"action"`
-	Message string             `json:"message"`
-	Data    publishMessageData `json:"data"`
+	Action  string                    `json:"action"`
+	Message string                    `json:"message"`
+	Data    publishMessageRequestData `json:"data"`
+}
+
+type subscribeRequestData struct {
+	Publisher_id string `json:"publisher_id"`
+}
+type subscribeRequest struct {
+	Action  string               `json:"action"`
+	Message string               `json:"message"`
+	Data    subscribeRequestData `json:"data"`
 }
 
 func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
@@ -217,6 +283,24 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Action:  "failed_publishing_message",
 						Message: err.Error(),
 					}, errorSuccess{})
+				}
+			case "subscribe":
+				subscribeRequest := subscribeRequest{}
+				err := json.Unmarshal([]byte(message), &subscribeRequest)
+				if err != nil {
+					client.send(jSONCommunication{
+						Action:  "failed_subscribing",
+						Message: "Invalid json format",
+					}, errorSuccess{})
+				}
+				subscription, err := subscribe(client, mongoManager, subscribeRequest.Data.Publisher_id)
+				if err != nil {
+					client.send(jSONCommunication{
+						Action:  "failed_subscribing",
+						Message: err.Error(),
+					}, errorSuccess{})
+				} else {
+					client.subscriptionManager.newSubscriptionChannel <- subscription
 				}
 			}
 		case <-client.receiveClosedChannel:
@@ -326,6 +410,14 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 
 	//add authed client to the manager
 	managerChannels.newConnection <- &client
+	subManager := subscriptionManager{
+		newSubscriptionChannel:    make(chan *subscription),
+		removeSubscriptionChannel: make(chan string),
+	}
+	client.subscriptionManager = &subManager
+
+	go client.subscriptionManager.managerLoop(mongoManager)
+	go client.subscriptionManager.receiveLoop()
 
 	//start receiving messages from the client
 	go clientMessagesLoop(&client, mongoManager)

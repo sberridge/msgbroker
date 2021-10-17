@@ -35,7 +35,7 @@ func checkPublisherExists(name string, mongoManager *mongoManager) (bool, error)
 	return false, nil
 }
 
-func registerPublisher(owner *clientConnection, data newPublisherData, mongoManager *mongoManager) (newId string, err error) {
+func registerPublisher(owner *clientConnection, data newPublisherRequestData, mongoManager *mongoManager) (newId string, err error) {
 
 	//open collection containing publisher details
 	col := mongoManager.connection.Database("message-broker").Collection("publishers")
@@ -49,7 +49,7 @@ func registerPublisher(owner *clientConnection, data newPublisherData, mongoMana
 	return
 }
 
-func newPublisher(owner *clientConnection, data newPublisherData, mongoManager *mongoManager) (*publisher, error) {
+func newPublisher(owner *clientConnection, data newPublisherRequestData, mongoManager *mongoManager) (*publisher, error) {
 	exists, err := checkPublisherExists(data.Name, mongoManager)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func newPublisher(owner *clientConnection, data newPublisherData, mongoManager *
 	return &publisher, nil
 }
 
-func publishMessage(owner *clientConnection, data publishMessageData, mongoManager *mongoManager) (bool, error) {
+func publishMessage(owner *clientConnection, data publishMessageRequestData, mongoManager *mongoManager) (bool, error) {
 
 	col := mongoManager.connection.Database("message-broker").Collection("publishers")
 	filter := bson.D{primitive.E{Key: "id", Value: data.Publisher_id}, primitive.E{Key: "owner_id", Value: owner.id}}
