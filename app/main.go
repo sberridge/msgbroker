@@ -62,7 +62,9 @@ func (subManager *subscriptionManager) receiveLoop() {
 		for _, sub := range subManager.subscriptions {
 			select {
 			case messages := <-sub.messagesChannel:
-				fmt.Println(messages)
+				if len(messages) > 0 {
+
+				}
 			case <-subManager.cancelReceiveChannel:
 				closed = true
 			}
@@ -84,11 +86,20 @@ func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
 			go sub.loop(mongoManager)
 			subManager.subscriptions[sub.id] = sub
 		case subId := <-subManager.removeSubscriptionChannel:
+			timeout := time.After(30 * time.Second)
+			select {
+			case subManager.subscriptions[subId].cancelChannel <- true:
+			case <-timeout:
+			}
 			delete(subManager.subscriptions, subId)
 		case <-subManager.cancelManagerChannel:
 			subManager.cancelReceiveChannel <- true
 			for _, sub := range subManager.subscriptions {
-				sub.cancelChannel <- true
+				timeout := time.After(30 * time.Second)
+				select {
+				case sub.cancelChannel <- true:
+				case <-timeout:
+				}
 			}
 			closed = true
 		}
@@ -300,6 +311,10 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Message: err.Error(),
 					}, errorSuccess{})
 				} else {
+					client.send(jSONCommunication{
+						Action:  "subscribed",
+						Message: "Subscribed",
+					}, errorSuccess{})
 					client.subscriptionManager.newSubscriptionChannel <- subscription
 				}
 			}
@@ -411,8 +426,11 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	//add authed client to the manager
 	managerChannels.newConnection <- &client
 	subManager := subscriptionManager{
+		subscriptions:             map[string]*subscription{},
 		newSubscriptionChannel:    make(chan *subscription),
 		removeSubscriptionChannel: make(chan string),
+		cancelReceiveChannel:      make(chan bool),
+		cancelManagerChannel:      make(chan bool),
 	}
 	client.subscriptionManager = &subManager
 

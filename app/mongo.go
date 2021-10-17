@@ -35,6 +35,13 @@ func mongoFindOne(collection *mongo.Collection, projection bson.D, filter bson.D
 	return result, err
 }
 
+func mongoFindMany(collection *mongo.Collection, projection bson.D, filter bson.D) (*mongo.Cursor, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	findOptions := options.Find().SetProjection(projection)
+	return collection.Find(ctx, filter, findOptions)
+}
+
 func mongoInsertOne(collection *mongo.Collection, row bson.D) (*mongo.InsertOneResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()

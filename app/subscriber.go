@@ -1,10 +1,11 @@
 package main
 
 import (
+	"errors"
+
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type subscription struct {
@@ -15,10 +16,13 @@ type subscription struct {
 	messagesChannel chan []publishMessageRequestData
 }
 
-func (sub *subscription) loop(*mongoManager) {
+func (sub *subscription) loop(mongoManager *mongoManager) {
 	closed := false
 	for {
+		//collection := mongoManager.connection.Database("message-broker").Collection("clients")
+
 		messages := []publishMessageRequestData{}
+
 		select {
 		case sub.messagesChannel <- messages:
 		case <-sub.cancelChannel:
@@ -34,14 +38,12 @@ func (sub *subscription) loop(*mongoManager) {
 func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId string) (*subscription, error) {
 	col := mongoManager.connection.Database("message-broker").Collection("clients")
 	filter := bson.D{primitive.E{Key: "id", Value: owner.id},
-		primitive.E{Key: "subscriptions", Value: bson.D{
-			primitive.E{Key: "publisher_id", Value: publisherId},
-		},
-		},
+		primitive.E{Key: "subscriptions.publisher_id", Value: publisherId},
 	}
-	_, err := mongoFindOne(col, bson.D{}, filter)
-	if err != mongo.ErrNoDocuments {
-		return nil, err
+	result, _ := mongoFindOne(col, bson.D{primitive.E{Key: "id", Value: 1}}, filter)
+
+	if _, e := result["id"]; e {
+		return nil, errors.New("already subscribed")
 	}
 
 	filter = bson.D{primitive.E{Key: "id", Value: owner.id}}
@@ -53,7 +55,7 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId 
 		}},
 	}}}
 
-	_, err = mongoUpdateOne(col, filter, update)
+	_, err := mongoUpdateOne(col, filter, update)
 
 	if err != nil {
 		return nil, err
