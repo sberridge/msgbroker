@@ -35,10 +35,10 @@ func mongoFindOne(collection *mongo.Collection, projection bson.D, filter bson.D
 	return result, err
 }
 
-func mongoFindMany(collection *mongo.Collection, projection bson.D, filter bson.D) (*mongo.Cursor, error) {
+func mongoFindMany(collection *mongo.Collection, findOptions *options.FindOptions, filter bson.D) (*mongo.Cursor, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	findOptions := options.Find().SetProjection(projection)
+	//findOptions := options.Find().SetProjection(projection)
 	return collection.Find(ctx, filter, findOptions)
 }
 
@@ -55,9 +55,16 @@ func mongoUpdateOne(collection *mongo.Collection, filter bson.D, update bson.D) 
 	return updateResult, err
 }
 
-func mongoUpdateMany(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {
+/* func mongoUpdateMany(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	updateResult, err := collection.UpdateMany(ctx, filter, update)
 	return updateResult, err
+} */
+
+func mongoDeleteMany(collection *mongo.Collection, filter bson.D) (*mongo.DeleteResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	deleteResult, err := collection.DeleteMany(ctx, filter)
+	return deleteResult, err
 }

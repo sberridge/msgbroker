@@ -89,18 +89,15 @@ func publishMessage(owner *clientConnection, data publishMessageRequestData, mon
 		timeToExpire = time.Now().Unix() + data.Ttl
 	}
 
-	_, err = mongoUpdateOne(col, filter, bson.D{
-		primitive.E{Key: "$push", Value: bson.D{
-			primitive.E{Key: "messages", Value: bson.D{
-				primitive.E{Key: "id", Value: uuid.New().String()},
-				primitive.E{Key: "payload", Value: data.Payload},
-				primitive.E{Key: "date_created", Value: time.Now()},
-				primitive.E{Key: "ttl", Value: timeToExpire},
-			},
-			},
-		},
-		},
+	messagesCollection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
+	_, err = mongoInsertOne(messagesCollection, bson.D{
+		primitive.E{Key: "id", Value: uuid.New().String()},
+		primitive.E{Key: "publisher_id", Value: data.Publisher_id},
+		primitive.E{Key: "payload", Value: data.Payload},
+		primitive.E{Key: "date_created", Value: time.Now()},
+		primitive.E{Key: "ttl", Value: timeToExpire},
 	})
+
 	if err != nil {
 		return false, err
 	}

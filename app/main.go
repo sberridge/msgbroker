@@ -63,7 +63,7 @@ func (subManager *subscriptionManager) receiveLoop() {
 			select {
 			case messages := <-sub.messagesChannel:
 				if len(messages) > 0 {
-
+					fmt.Println(messages)
 				}
 			case <-subManager.cancelReceiveChannel:
 				closed = true
@@ -331,38 +331,15 @@ func handleExpiredMessages(mongoManager *mongoManager) {
 
 	for {
 		filter := bson.D{
-			primitive.E{Key: "messages", Value: bson.D{
-				primitive.E{Key: "$all", Value: bson.A{
-					bson.D{primitive.E{Key: "$elemMatch", Value: bson.D{
-						primitive.E{Key: "ttl", Value: bson.D{
-							primitive.E{Key: "$lt", Value: time.Now().Unix()},
-							primitive.E{Key: "$ne", Value: 0},
-						},
-						},
-					},
-					},
-					},
-				},
-				},
+			primitive.E{Key: "ttl", Value: bson.D{
+				primitive.E{Key: "$lt", Value: time.Now().Unix()},
+				primitive.E{Key: "$ne", Value: 0},
 			},
 			},
 		}
 
-		update := bson.D{
-			primitive.E{Key: "$pull", Value: bson.D{
-				primitive.E{Key: "messages", Value: bson.D{
-					primitive.E{Key: "ttl", Value: bson.D{
-						primitive.E{Key: "$lt", Value: time.Now().Unix()},
-						primitive.E{Key: "$ne", Value: 0},
-					},
-					},
-				},
-				},
-			},
-			},
-		}
-		col := mongoManager.connection.Database("message-broker").Collection("publishers")
-		_, err := mongoUpdateMany(col, filter, update)
+		col := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
+		_, err := mongoDeleteMany(col, filter)
 		if err != nil {
 			fmt.Println(err.Error())
 		}

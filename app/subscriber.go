@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type subscription struct {
@@ -13,15 +17,47 @@ type subscription struct {
 	publisherId     string
 	clientId        string
 	cancelChannel   chan bool
-	messagesChannel chan []publishMessageRequestData
+	messagesChannel chan []messageItem
+}
+
+type messageItem struct {
+	Id          string `json:"id"`
+	PublisherId string `json:"publisher_id"`
+	Payload     string `json:"payload"`
 }
 
 func (sub *subscription) loop(mongoManager *mongoManager) {
 	closed := false
 	for {
-		//collection := mongoManager.connection.Database("message-broker").Collection("clients")
-
-		messages := []publishMessageRequestData{}
+		collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
+		filter := bson.D{primitive.E{Key: "publisher_id", Value: sub.publisherId}}
+		projection := bson.D{
+			primitive.E{Key: "publisher_id", Value: 1},
+			primitive.E{Key: "payload", Value: 1},
+			primitive.E{Key: "date_created", Value: 0},
+			primitive.E{Key: "ttl", Value: 1},
+		}
+		results, err := mongoFindMany(collection, options.Find().SetProjection(projection).SetSort(bson.D{primitive.E{Key: "date_created", Value: 1}}).SetLimit(10), filter)
+		fmt.Println(results)
+		messages := []messageItem{}
+		if err != nil {
+			fmt.Println(err.Error())
+			//todo: error logging?
+		} else {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			for {
+				row := results.Current
+				messages = append(messages, messageItem{
+					Id:          row.Lookup("id").String(),
+					PublisherId: row.Lookup("publisher_id").String(),
+					Payload:     row.Lookup("payload").String(),
+				})
+				if !results.Next(ctx) {
+					break
+				}
+			}
+		}
 
 		select {
 		case sub.messagesChannel <- messages:
@@ -66,7 +102,7 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId 
 		publisherId:     publisherId,
 		clientId:        owner.id,
 		cancelChannel:   make(chan bool),
-		messagesChannel: make(chan []publishMessageRequestData),
+		messagesChannel: make(chan []messageItem),
 	}
 	return &sub, nil
 
