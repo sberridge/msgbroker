@@ -7,7 +7,6 @@ import (
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type publisher struct {
@@ -21,18 +20,12 @@ func checkPublisherExists(name string, mongoManager *mongoManager) (bool, error)
 	//open collection containing publisher details
 	col := mongoManager.connection.Database("message-broker").Collection("publishers")
 	filter := bson.D{primitive.E{Key: "name", Value: name}}
-	findProjection := bson.D{primitive.E{Key: "id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "_id", Value: 0}}
 
-	_, err := mongoFindOne(col, findProjection, filter)
-
+	count, err := mongoCount(col, filter)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return false, nil
-		} else {
-			return false, err
-		}
+		return false, err
 	}
-	return false, nil
+	return count > 0, nil
 }
 
 func registerPublisher(owner *clientConnection, data newPublisherRequestData, mongoManager *mongoManager) (newId string, err error) {
@@ -41,7 +34,7 @@ func registerPublisher(owner *clientConnection, data newPublisherRequestData, mo
 	col := mongoManager.connection.Database("message-broker").Collection("publishers")
 
 	newId = uuid.New().String()
-	_, err = mongoInsertOne(col, bson.D{primitive.E{Key: "id", Value: newId}, primitive.E{Key: "name", Value: data.Name}, primitive.E{Key: "owner_id", Value: owner.id}})
+	_, err = mongoInsertOne(col, bson.D{primitive.E{Key: "_id", Value: newId}, primitive.E{Key: "name", Value: data.Name}, primitive.E{Key: "owner_id", Value: owner.id}})
 
 	if err != nil {
 		return "", err
@@ -72,16 +65,15 @@ func newPublisher(owner *clientConnection, data newPublisherRequestData, mongoMa
 func publishMessage(owner *clientConnection, data publishMessageRequestData, mongoManager *mongoManager) (bool, error) {
 
 	col := mongoManager.connection.Database("message-broker").Collection("publishers")
-	filter := bson.D{primitive.E{Key: "id", Value: data.Publisher_id}, primitive.E{Key: "owner_id", Value: owner.id}}
-	findProjection := bson.D{primitive.E{Key: "id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "_id", Value: 0}}
+	filter := bson.D{primitive.E{Key: "_id", Value: data.Publisher_id}, primitive.E{Key: "owner_id", Value: owner.id}}
 
-	_, err := mongoFindOne(col, findProjection, filter)
+	count, err := mongoCount(col, filter)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
-			return false, errors.New("publisher not found")
-		} else {
-			return false, err
-		}
+		return false, err
+	}
+
+	if count == 0 {
+		return false, errors.New("publisher not found")
 	}
 
 	timeToExpire := int64(0)
@@ -91,7 +83,7 @@ func publishMessage(owner *clientConnection, data publishMessageRequestData, mon
 
 	messagesCollection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
 	_, err = mongoInsertOne(messagesCollection, bson.D{
-		primitive.E{Key: "id", Value: uuid.New().String()},
+		primitive.E{Key: "_id", Value: uuid.New().String()},
 		primitive.E{Key: "publisher_id", Value: data.Publisher_id},
 		primitive.E{Key: "payload", Value: data.Payload},
 		primitive.E{Key: "date_created", Value: time.Now()},

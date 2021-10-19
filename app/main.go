@@ -51,6 +51,8 @@ type clientConnection struct {
 type subscriptionManager struct {
 	subscriptions             map[string]*subscription
 	newSubscriptionChannel    chan *subscription
+	confirmChannel            chan []confirmMessageData
+	sendToClientChannel       chan sendRequest
 	removeSubscriptionChannel chan string
 	cancelReceiveChannel      chan bool
 	cancelManagerChannel      chan bool
@@ -63,6 +65,13 @@ func (subManager *subscriptionManager) receiveLoop() {
 			select {
 			case messages := <-sub.messagesChannel:
 				if len(messages) > 0 {
+					subManager.sendToClientChannel <- sendRequest{
+						jSONCommunication{
+							Action: "messages",
+							Data:   messages,
+						},
+						errorSuccess{},
+					}
 					fmt.Println(messages)
 				}
 			case <-subManager.cancelReceiveChannel:
@@ -84,6 +93,7 @@ func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
 		select {
 		case sub := <-subManager.newSubscriptionChannel:
 			go sub.loop(mongoManager)
+			go sub.confirmLoop(mongoManager)
 			subManager.subscriptions[sub.id] = sub
 		case subId := <-subManager.removeSubscriptionChannel:
 			timeout := time.After(30 * time.Second)
@@ -92,12 +102,22 @@ func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
 			case <-timeout:
 			}
 			delete(subManager.subscriptions, subId)
+		case messages := <-subManager.confirmChannel:
+			for _, msg := range messages {
+				subManager.subscriptions[msg.SubscriptionId].confirmedChannel <- msg.Id
+			}
 		case <-subManager.cancelManagerChannel:
+			fmt.Println("sub manager stop")
 			subManager.cancelReceiveChannel <- true
 			for _, sub := range subManager.subscriptions {
 				timeout := time.After(30 * time.Second)
 				select {
 				case sub.cancelChannel <- true:
+				case <-timeout:
+				}
+				timeout = time.After(30 * time.Second)
+				select {
+				case sub.cancelConfirmChannel <- true:
 				case <-timeout:
 				}
 			}
@@ -116,8 +136,8 @@ func (client *clientConnection) receiveLoop(managerChannels connectionManagerCha
 		if err != nil {
 			//errored so we've lost connection
 			managerChannels.lostConnection <- client
+			fmt.Println("lost connection")
 			client.close()
-			return
 		}
 
 		//got a message, send it out on the channel
@@ -148,6 +168,7 @@ func (client *clientConnection) sendLoop() {
 			}
 		case <-client.sendClosedChannel: //received instruction to exit the loop as the websocket connection has closed
 			closed = true
+			fmt.Println("send loop stop")
 		}
 		if closed {
 			break
@@ -199,10 +220,12 @@ func (client *clientConnection) close() {
 	case <-timeout:
 	}
 
-	timeout = time.After(time.Second * 5)
-	select {
-	case client.subscriptionManager.cancelManagerChannel <- true: //tell the sub manager to stop
-	case <-timeout:
+	if client.subscriptionManager != nil {
+		timeout = time.After(time.Second * 5)
+		select {
+		case client.subscriptionManager.cancelManagerChannel <- true: //tell the sub manager to stop
+		case <-timeout:
+		}
 	}
 
 }
@@ -236,6 +259,19 @@ type subscribeRequest struct {
 	Data    subscribeRequestData `json:"data"`
 }
 
+type confirmMessageData struct {
+	Id             string `json:"id"`
+	SubscriptionId string `json:"subscription_id"`
+}
+type confirmRequestData struct {
+	Messages []confirmMessageData `json:"messages"`
+}
+type confirmRequest struct {
+	Action  string             `json:"action"`
+	Message string             `json:"message"`
+	Data    confirmRequestData `json:"data"`
+}
+
 func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 	closed := false
 	for {
@@ -248,7 +284,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 					Action:  "invalid_message",
 					Message: "The message sent was incorrectly formatted",
 				}, errorSuccess{})
-				continue
+				break
 			}
 			switch jsonMsg.Action {
 			case "register_publisher":
@@ -259,6 +295,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Action:  "failed_registering_publisher",
 						Message: "Invalid json format",
 					}, errorSuccess{})
+					break
 				}
 				publisher, err := newPublisher(client, newPublisherRequest.Data, mongoManager)
 				if err != nil {
@@ -280,6 +317,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Action:  "failed_publishing_message",
 						Message: "Invalid json format",
 					}, errorSuccess{})
+					break
 				}
 				publishedMessage, err := publishMessage(client, publishMessageRequest.Data, mongoManager)
 				if publishedMessage {
@@ -303,6 +341,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Action:  "failed_subscribing",
 						Message: "Invalid json format",
 					}, errorSuccess{})
+					break
 				}
 				subscription, err := subscribe(client, mongoManager, subscribeRequest.Data.Publisher_id)
 				if err != nil {
@@ -317,9 +356,22 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 					}, errorSuccess{})
 					client.subscriptionManager.newSubscriptionChannel <- subscription
 				}
+			case "confirm_messages":
+				confirmRequest := confirmRequest{}
+				err := json.Unmarshal([]byte(message), &confirmRequest)
+				if err != nil {
+					client.send(jSONCommunication{
+						Action:  "failed_confirmation",
+						Message: "Invalid json format",
+					}, errorSuccess{})
+					break
+				}
+				client.subscriptionManager.confirmChannel <- confirmRequest.Data.Messages
+
 			}
 		case <-client.receiveClosedChannel:
 			closed = true
+			fmt.Println("receive loop stop")
 		}
 		if closed {
 			break
@@ -384,18 +436,10 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	//start the send message loop
 	go client.sendLoop()
 
-	//authentication channels
-	authChannels := errorSuccess{
-		errorChannel:   make(chan error),
-		successChannel: make(chan bool),
-	}
-
 	//authenticate the client connection
-	go authenticate(&client, authChannels, mongoManager)
+	bsonClient, err := authenticate(&client, mongoManager)
 
-	select {
-	case <-authChannels.successChannel: //authed!
-	case <-authChannels.errorChannel: //not authed, close the connection
+	if err != nil {
 		client.close()
 		return
 	}
@@ -405,14 +449,28 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	subManager := subscriptionManager{
 		subscriptions:             map[string]*subscription{},
 		newSubscriptionChannel:    make(chan *subscription),
+		confirmChannel:            make(chan []confirmMessageData),
 		removeSubscriptionChannel: make(chan string),
 		cancelReceiveChannel:      make(chan bool),
 		cancelManagerChannel:      make(chan bool),
+		sendToClientChannel:       client.sendChannel,
 	}
 	client.subscriptionManager = &subManager
 
 	go client.subscriptionManager.managerLoop(mongoManager)
 	go client.subscriptionManager.receiveLoop()
+
+	for _, sub := range bsonClient.Subscriptions {
+		client.subscriptionManager.newSubscriptionChannel <- &subscription{
+			id:                   sub.Id,
+			publisherId:          sub.PublisherId,
+			clientId:             client.id,
+			cancelChannel:        make(chan bool),
+			messagesChannel:      make(chan []messageItem),
+			confirmedChannel:     make(chan string),
+			cancelConfirmChannel: make(chan bool),
+		}
+	}
 
 	//start receiving messages from the client
 	go clientMessagesLoop(&client, mongoManager)

@@ -26,19 +26,22 @@ func startMongo() (*mongoManager, error) {
 	return &manager, nil
 }
 
-func mongoFindOne(collection *mongo.Collection, projection bson.D, filter bson.D) (bson.M, error) {
+func mongoCount(collection *mongo.Collection, filter bson.D) (int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return collection.CountDocuments(ctx, filter)
+}
+
+func mongoFindOne(collection *mongo.Collection, projection bson.D, filter bson.D) *mongo.SingleResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	findOptions := options.FindOne().SetProjection(projection)
-	result := bson.M{}
-	err := collection.FindOne(ctx, filter, findOptions).Decode(&result)
-	return result, err
+	return collection.FindOne(ctx, filter, findOptions)
 }
 
 func mongoFindMany(collection *mongo.Collection, findOptions *options.FindOptions, filter bson.D) (*mongo.Cursor, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	//findOptions := options.Find().SetProjection(projection)
 	return collection.Find(ctx, filter, findOptions)
 }
 

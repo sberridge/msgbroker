@@ -18,8 +18,18 @@ type jSONAuthResponse struct {
 	UniqueId string `json:"id"`
 }
 
+type bSONSubscription struct {
+	Id          string `bson:"_id"`
+	PublisherId string `bson:"publisher_id"`
+}
+type bSONClient struct {
+	Id            string             `bson:"_id"`
+	Name          string             `bson:"name"`
+	Subscriptions []bSONSubscription `bson:"subscriptions"`
+}
+
 //authenticate a client connection
-func authenticate(client *clientConnection, authChannels errorSuccess, mongoManager *mongoManager) {
+func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONClient, error) {
 
 	successError := errorSuccess{
 		errorChannel:   make(chan error),
@@ -34,8 +44,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 
 	select {
 	case err := <-successError.errorChannel: //failed to request authentication
-		authChannels.errorChannel <- err
-		return
+		return nil, err
 	case <-successError.successChannel: //success!
 	}
 
@@ -50,8 +59,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 			Action:  "authentication_failed",
 			Message: "Authentication timed out",
 		}, errorSuccess{})
-		authChannels.errorChannel <- errors.New("authentication timed out")
-		return
+		return nil, errors.New("authentication timed out")
 	}
 
 	authResponse := jSONAuthResponse{}
@@ -62,8 +70,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 			Action:  "authentication_failed",
 			Message: "Failed authentication",
 		}, errorSuccess{})
-		authChannels.errorChannel <- err
-		return
+		return nil, err
 	}
 
 	//open collection containing client details
@@ -76,23 +83,20 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 		name := authResponse.Name
 
 		filter := bson.D{primitive.E{Key: "name", Value: name}}
-		findProjection := bson.D{primitive.E{Key: "id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "_id", Value: 0}}
-		_, err := mongoFindOne(col, findProjection, filter)
+		num, err := mongoCount(col, filter)
 
-		if err == mongo.ErrNoDocuments {
+		if num == 0 {
 
 			//client is not in the collection so inserting a new record
 			id := uuid.New().String()
-			_, err := mongoInsertOne(col, bson.D{primitive.E{Key: "id", Value: id}, primitive.E{Key: "name", Value: name}})
+			_, err := mongoInsertOne(col, bson.D{primitive.E{Key: "_id", Value: id}, primitive.E{Key: "name", Value: name}})
 			if err != nil {
-
 				//failed inserting the client record
 				client.send(jSONCommunication{
 					Action:  "authentication_failed",
 					Message: "Failed creating client",
 				}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-				authChannels.errorChannel <- err
-				return
+				return nil, err
 			}
 
 			//set the new ID on the client connection
@@ -108,16 +112,17 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 				},
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
 
-			authChannels.successChannel <- true
-			return
+			return &bSONClient{
+				Id:   id,
+				Name: client.name,
+			}, nil
 		} else if err != nil {
 			//failed due to db error
 			client.send(jSONCommunication{
 				Action:  "authentication_failed",
 				Message: "Error occurred",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-			authChannels.errorChannel <- err
-			return
+			return nil, err
 		}
 
 		//client already exists
@@ -125,17 +130,18 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 			Action:  "authentication_failed",
 			Message: "Client already exists",
 		}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-		authChannels.errorChannel <- errors.New("client exists")
+		return nil, errors.New("client exists")
 	} else {
 
 		//ID supplied so we're going to see if there is a valid client
 
 		id := authResponse.UniqueId
 
-		filter := bson.D{primitive.E{Key: "id", Value: id}}
-		findProjection := bson.D{primitive.E{Key: "id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "_id", Value: 0}}
-		clientResult, err := mongoFindOne(col, findProjection, filter)
-
+		filter := bson.D{primitive.E{Key: "_id", Value: id}}
+		findProjection := bson.D{primitive.E{Key: "_id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "subscriptions", Value: 1}}
+		result := mongoFindOne(col, findProjection, filter)
+		clientStruct := bSONClient{}
+		err = result.Decode(&clientStruct)
 		if err == mongo.ErrNoDocuments {
 
 			//not found
@@ -143,8 +149,7 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 				Action:  "authentication_failed",
 				Message: "Incorrect credentials",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-			authChannels.errorChannel <- errors.New("client not found")
-			return
+			return nil, errors.New("client not found")
 		} else if err != nil {
 
 			//db error
@@ -152,26 +157,21 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 				Action:  "authentication_failed",
 				Message: "Error occurred",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-			authChannels.errorChannel <- err
-			return
+			return nil, err
 		}
 
 		//client found
 
-		clientId := clientResult["id"]
-		clientName := clientResult["name"]
+		clientId := clientStruct.Id
+		clientName := clientStruct.Name
+
+		client.id = clientId
+		client.name = clientName
 
 		//create response for the user with the clients ID and name
-		response := jSONAuthResponse{}
-		switch v := clientId.(type) {
-		case string:
-			client.id = v //updating the client connection struct with the clients ID
-			response.UniqueId = v
-		}
-		switch v := clientName.(type) {
-		case string:
-			client.name = v //updating the client connection struct with the clients name
-			response.Name = v
+		response := jSONAuthResponse{
+			UniqueId: clientId,
+			Name:     clientName,
 		}
 
 		//request to send success message to the clients
@@ -181,9 +181,9 @@ func authenticate(client *clientConnection, authChannels errorSuccess, mongoMana
 		}, successError) //this time we do want to check the response so we're supplying channels
 		select {
 		case <-successError.errorChannel: //failed to notify the front end :(
-			authChannels.errorChannel <- errors.New("failed to notify success")
+			return nil, errors.New("failed to notify success")
 		case <-successError.successChannel: //success!
-			authChannels.successChannel <- true
+			return &clientStruct, nil
 		}
 
 	}
