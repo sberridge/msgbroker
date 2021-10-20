@@ -13,14 +13,14 @@ import (
 )
 
 type subscription struct {
-	id                   string
-	publisherId          string
-	clientId             string
-	waitingConfirmation  []string //potential issue here
-	cancelChannel        chan bool
-	cancelConfirmChannel chan bool
-	messagesChannel      chan []messageItem
-	confirmedChannel     chan string
+	id                      string
+	publisherId             string
+	clientId                string
+	cancelChannel           chan bool
+	cancelConfirmChannel    chan bool
+	messagesChannel         chan []messageItem
+	confirmedChannel        chan []string
+	receiveConfirmedChannel chan []string
 }
 
 type messageItem struct {
@@ -37,23 +37,20 @@ func (sub *subscription) confirmLoop(mongoManager *mongoManager) {
 		case confirmedId := <-sub.confirmedChannel:
 			collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
 			filter := bson.D{
-				primitive.E{Key: "_id", Value: confirmedId},
-			}
-			update := bson.D{
-				primitive.E{Key: "received_by", Value: bson.D{
-					primitive.E{Key: "$push", Value: sub.clientId},
+				primitive.E{Key: "_id", Value: bson.D{
+					primitive.E{Key: "$in", Value: confirmedId},
 				}},
 			}
-			_, err := mongoUpdateOne(collection, filter, update)
-
-			if err == nil {
-				for i, v := range sub.waitingConfirmation {
-					if v == confirmedId {
-						sub.waitingConfirmation[i] = sub.waitingConfirmation[len(sub.waitingConfirmation)-1]
-						sub.waitingConfirmation = sub.waitingConfirmation[:len(sub.waitingConfirmation)-1]
-						break
-					}
-				}
+			update := bson.D{
+				primitive.E{Key: "$push", Value: bson.D{
+					primitive.E{Key: "received_by", Value: sub.clientId},
+				}},
+			}
+			res, err := mongoUpdateOne(collection, filter, update)
+			if err != nil {
+				fmt.Println(err.Error())
+			} else {
+				fmt.Println(res.ModifiedCount)
 			}
 
 		case <-sub.cancelConfirmChannel:
@@ -74,11 +71,6 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 			primitive.E{Key: "received_by", Value: bson.D{
 				primitive.E{Key: "$nin", Value: []string{sub.clientId}},
 			}},
-		}
-		if len(sub.waitingConfirmation) > 0 {
-			filter = append(filter, primitive.E{Key: "_id", Value: bson.D{
-				primitive.E{Key: "$nin", Value: sub.waitingConfirmation},
-			}})
 		}
 
 		projection := bson.D{
@@ -107,20 +99,23 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 					Payload:        row.Lookup("payload").String(),
 					SubscriptionId: sub.id,
 				}
-				sub.waitingConfirmation = append(sub.waitingConfirmation, msg.Id)
 
 				messages = append(messages, msg)
 			}
 		}
+		if len(messages) > 0 {
+			select {
+			case sub.messagesChannel <- messages:
+			case <-sub.cancelChannel:
+				closed = true
+			}
+			if closed {
+				break
+			}
+			msgs := <-sub.receiveConfirmedChannel
+			sub.confirmedChannel <- msgs
+		}
 
-		select {
-		case sub.messagesChannel <- messages:
-		case <-sub.cancelChannel:
-			closed = true
-		}
-		if closed {
-			break
-		}
 		<-time.After(time.Second * 5)
 	}
 
@@ -153,13 +148,14 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId 
 	}
 
 	sub := subscription{
-		id:                   id,
-		publisherId:          publisherId,
-		clientId:             owner.id,
-		cancelChannel:        make(chan bool),
-		confirmedChannel:     make(chan string),
-		cancelConfirmChannel: make(chan bool),
-		messagesChannel:      make(chan []messageItem),
+		id:                      id,
+		publisherId:             publisherId,
+		clientId:                owner.id,
+		cancelChannel:           make(chan bool),
+		confirmedChannel:        make(chan []string),
+		receiveConfirmedChannel: make(chan []string),
+		cancelConfirmChannel:    make(chan bool),
+		messagesChannel:         make(chan []messageItem),
 	}
 	return &sub, nil
 

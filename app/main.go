@@ -72,7 +72,6 @@ func (subManager *subscriptionManager) receiveLoop() {
 						},
 						errorSuccess{},
 					}
-					fmt.Println(messages)
 				}
 			case <-subManager.cancelReceiveChannel:
 				closed = true
@@ -103,9 +102,14 @@ func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
 			}
 			delete(subManager.subscriptions, subId)
 		case messages := <-subManager.confirmChannel:
+			subMessages := make(map[string][]string)
 			for _, msg := range messages {
-				subManager.subscriptions[msg.SubscriptionId].confirmedChannel <- msg.Id
+				subMessages[msg.SubscriptionId] = append(subMessages[msg.SubscriptionId], msg.Id)
 			}
+			for key, v := range subMessages {
+				subManager.subscriptions[key].receiveConfirmedChannel <- v
+			}
+
 		case <-subManager.cancelManagerChannel:
 			fmt.Println("sub manager stop")
 			subManager.cancelReceiveChannel <- true
@@ -462,13 +466,14 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 
 	for _, sub := range bsonClient.Subscriptions {
 		client.subscriptionManager.newSubscriptionChannel <- &subscription{
-			id:                   sub.Id,
-			publisherId:          sub.PublisherId,
-			clientId:             client.id,
-			cancelChannel:        make(chan bool),
-			messagesChannel:      make(chan []messageItem),
-			confirmedChannel:     make(chan string),
-			cancelConfirmChannel: make(chan bool),
+			id:                      sub.Id,
+			publisherId:             sub.PublisherId,
+			clientId:                client.id,
+			cancelChannel:           make(chan bool),
+			messagesChannel:         make(chan []messageItem),
+			confirmedChannel:        make(chan []string),
+			receiveConfirmedChannel: make(chan []string),
+			cancelConfirmChannel:    make(chan bool),
 		}
 	}
 
