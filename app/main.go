@@ -86,21 +86,47 @@ func (subManager *subscriptionManager) receiveLoop() {
 	}
 }
 
+func (subManager *subscriptionManager) stop() {
+	timeout := time.After(2 * time.Second)
+	select {
+	case subManager.cancelReceiveChannel <- true:
+	case <-timeout:
+	}
+
+	for _, sub := range subManager.subscriptions {
+		timeout := time.After(30 * time.Second)
+		select {
+		case sub.cancelChannel <- true:
+		case <-timeout:
+		}
+		timeout = time.After(30 * time.Second)
+		select {
+		case sub.cancelConfirmChannel <- true:
+		case <-timeout:
+		}
+	}
+}
+
+func (subManager *subscriptionManager) start(mongoManager *mongoManager) {
+	go subManager.receiveLoop()
+	for _, sub := range subManager.subscriptions {
+		go sub.confirmLoop(mongoManager)
+		go sub.loop(mongoManager)
+	}
+}
+
 func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
 	closed := false
 	for {
 		select {
 		case sub := <-subManager.newSubscriptionChannel:
-			go sub.loop(mongoManager)
-			go sub.confirmLoop(mongoManager)
+			subManager.stop()
 			subManager.subscriptions[sub.id] = sub
+			subManager.start(mongoManager)
 		case subId := <-subManager.removeSubscriptionChannel:
-			timeout := time.After(30 * time.Second)
-			select {
-			case subManager.subscriptions[subId].cancelChannel <- true:
-			case <-timeout:
-			}
+			subManager.stop()
 			delete(subManager.subscriptions, subId)
+			subManager.start(mongoManager)
 		case messages := <-subManager.confirmChannel:
 			subMessages := make(map[string][]string)
 			for _, msg := range messages {
@@ -112,19 +138,7 @@ func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
 
 		case <-subManager.cancelManagerChannel:
 			fmt.Println("sub manager stop")
-			subManager.cancelReceiveChannel <- true
-			for _, sub := range subManager.subscriptions {
-				timeout := time.After(30 * time.Second)
-				select {
-				case sub.cancelChannel <- true:
-				case <-timeout:
-				}
-				timeout = time.After(30 * time.Second)
-				select {
-				case sub.cancelConfirmChannel <- true:
-				case <-timeout:
-				}
-			}
+			subManager.stop()
 			closed = true
 		}
 		if closed {
@@ -371,7 +385,6 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 					break
 				}
 				client.subscriptionManager.confirmChannel <- confirmRequest.Data.Messages
-
 			}
 		case <-client.receiveClosedChannel:
 			closed = true
@@ -462,7 +475,6 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	client.subscriptionManager = &subManager
 
 	go client.subscriptionManager.managerLoop(mongoManager)
-	go client.subscriptionManager.receiveLoop()
 
 	for _, sub := range bsonClient.Subscriptions {
 		client.subscriptionManager.newSubscriptionChannel <- &subscription{

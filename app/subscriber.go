@@ -122,11 +122,19 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 }
 
 func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId string) (*subscription, error) {
+
+	publisherCol := mongoManager.connection.Database("message-broker").Collection("publishers")
+	publisherFilter := bson.D{primitive.E{Key: "_id", Value: publisherId}}
+	result, _ := mongoCount(publisherCol, publisherFilter)
+	if result == 0 {
+		return nil, errors.New("publisher not found")
+	}
+
 	col := mongoManager.connection.Database("message-broker").Collection("clients")
-	filter := bson.D{primitive.E{Key: "id", Value: owner.id},
+	filter := bson.D{primitive.E{Key: "_id", Value: owner.id},
 		primitive.E{Key: "subscriptions.publisher_id", Value: publisherId},
 	}
-	result, _ := mongoCount(col, filter)
+	result, _ = mongoCount(col, filter)
 
 	if result > 0 {
 		return nil, errors.New("already subscribed")
