@@ -58,12 +58,12 @@ func mongoUpdateOne(collection *mongo.Collection, filter bson.D, update bson.D) 
 	return updateResult, err
 }
 
-/* func mongoUpdateMany(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {
+func mongoUpdateMany(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	updateResult, err := collection.UpdateMany(ctx, filter, update)
 	return updateResult, err
-} */
+}
 
 func mongoDeleteMany(collection *mongo.Collection, filter bson.D) (*mongo.DeleteResult, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)

@@ -46,7 +46,7 @@ func (sub *subscription) confirmLoop(mongoManager *mongoManager) {
 					primitive.E{Key: "received_by", Value: sub.clientId},
 				}},
 			}
-			res, err := mongoUpdateOne(collection, filter, update)
+			res, err := mongoUpdateMany(collection, filter, update)
 			if err != nil {
 				fmt.Println(err.Error())
 			} else {

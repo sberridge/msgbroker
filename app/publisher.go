@@ -1,12 +1,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type publisher struct {
@@ -94,4 +96,38 @@ func publishMessage(owner *clientConnection, data publishMessageRequestData, mon
 		return false, err
 	}
 	return true, nil
+}
+
+type bsonPublisher struct {
+	Id      string `bson:"_id"`
+	Name    string `bson:"name"`
+	OwnerID string `bson:"owner_id"`
+}
+
+func getPublishers(owner *clientConnection, mongoManager *mongoManager) ([]publisher, error) {
+	col := mongoManager.connection.Database("message-broker").Collection("publishers")
+	filter := bson.D{primitive.E{Key: "owner_id", Value: owner.id}}
+
+	results, err := mongoFindMany(col, options.Find().SetProjection(bson.D{
+		primitive.E{Key: "_id", Value: 1},
+		primitive.E{Key: "name", Value: 1},
+	}), filter)
+
+	if err != nil {
+		return nil, err
+	}
+	bpublishers := []bsonPublisher{}
+	publishers := []publisher{}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	results.All(ctx, &bpublishers)
+	for _, p := range bpublishers {
+		publishers = append(publishers, publisher{
+			Id:       p.Id,
+			Name:     p.Name,
+			Owner_id: p.OwnerID,
+		})
+	}
+	return publishers, nil
+
 }

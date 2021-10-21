@@ -115,6 +115,19 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Data:   publisher,
 					}, errorSuccess{})
 				}
+			case "get_publishers":
+				publishers, err := getPublishers(client, mongoManager)
+				if err != nil {
+					client.send(jSONCommunication{
+						Action:  "failed_fetching_publishers",
+						Message: err.Error(),
+					}, errorSuccess{})
+					break
+				}
+				client.send(jSONCommunication{
+					Action: "your_publishers",
+					Data:   publishers,
+				}, errorSuccess{})
 			case "publish_message":
 				publishMessageRequest := publishMessageRequest{}
 				err := json.Unmarshal([]byte(message), &publishMessageRequest)
@@ -300,6 +313,10 @@ func main() {
 	//route to open a websocket connection
 	http.HandleFunc("/ws", func(rw http.ResponseWriter, r *http.Request) {
 		//hijack the request and turn it into a websocket connection
+		upgrader.CheckOrigin = func(r *http.Request) bool {
+
+			return true
+		}
 		con, err := upgrader.Upgrade(rw, r, nil)
 		if err != nil {
 			fmt.Println(err.Error())
