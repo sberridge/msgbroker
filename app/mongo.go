@@ -16,7 +16,7 @@ type mongoManager struct {
 func startMongo() (*mongoManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://message_broker_db:27017"))
 	if err != nil {
 		return nil, err
 	}

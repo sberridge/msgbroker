@@ -1,5 +1,5 @@
 (()=>{
-    let ws = new WebSocket("ws:localhost:8001/ws");
+    let ws = new WebSocket("ws:host.docker.internal:8001/ws");
     ws.addEventListener('message',(e)=>{
         let data = JSON.parse(e.data);
         if("message" in data) {

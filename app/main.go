@@ -37,7 +37,7 @@ type sendRequest struct {
 }
 
 type newPublisherRequestData struct {
-	Name string `json:"name"`
+	Name string `json:"name"` //name of a new publisher
 }
 type newPublisherRequest struct {
 	Action  string                  `json:"action"`
@@ -46,9 +46,9 @@ type newPublisherRequest struct {
 }
 
 type publishMessageRequestData struct {
-	PublisherID string `json:"publisher_id"`
-	Ttl         int64  `json:"ttl"`
-	Payload     string `json:"payload"`
+	PublisherID string `json:"publisher_id"` //publisher of the new message
+	Ttl         int64  `json:"ttl"`          //time to live in seconds
+	Payload     string `json:"payload"`      //payload of the message
 }
 type publishMessageRequest struct {
 	Action  string                    `json:"action"`
@@ -57,7 +57,7 @@ type publishMessageRequest struct {
 }
 
 type subscribeRequestData struct {
-	PublisherID string `json:"publisher_id"`
+	PublisherID string `json:"publisher_id"` //id of the publisher being subscribed to
 }
 type subscribeRequest struct {
 	Action  string               `json:"action"`
@@ -66,11 +66,11 @@ type subscribeRequest struct {
 }
 
 type confirmMessageData struct {
-	Id             string `json:"id"`
-	SubscriptionID string `json:"subscription_id"`
+	Id             string `json:"id"`              //id of the message being confirmed
+	SubscriptionID string `json:"subscription_id"` //id of the subscription the message was received on
 }
 type confirmRequestData struct {
-	Messages []confirmMessageData `json:"messages"`
+	Messages []confirmMessageData `json:"messages"` //slice of messages being confirmed from the client including the message ID and the subscription id
 }
 type confirmRequest struct {
 	Action  string             `json:"action"`
@@ -78,11 +78,12 @@ type confirmRequest struct {
 	Data    confirmRequestData `json:"data"`
 }
 
+//loop running in a goroutine to handle messages coming from the client via the websocket
 func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 	closed := false
 	for {
 		select {
-		case message := <-client.receiveChannel:
+		case message := <-client.receiveChannel: //received a message from the client
 			jsonMsg := jsonCommunication{}
 			err := json.Unmarshal([]byte(message), &jsonMsg)
 			if err != nil {
@@ -93,7 +94,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				break
 			}
 			switch jsonMsg.Action {
-			case "register_publisher":
+			case "register_publisher": //registering a new publisher
 				newPublisherRequest := newPublisherRequest{}
 				err := json.Unmarshal([]byte(message), &newPublisherRequest)
 				if err != nil {
@@ -115,7 +116,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Data:   publisher,
 					}, errorSuccess{})
 				}
-			case "get_publishers":
+			case "get_publishers": //request to receive the publishers owned by the client
 				publishers, err := getPublishers(client, mongoManager)
 				if err != nil {
 					client.send(jsonCommunication{
@@ -128,7 +129,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 					Action: "your_publishers",
 					Data:   publishers,
 				}, errorSuccess{})
-			case "publish_message":
+			case "publish_message": //request to publish a new message
 				publishMessageRequest := publishMessageRequest{}
 				err := json.Unmarshal([]byte(message), &publishMessageRequest)
 				if err != nil {
@@ -152,7 +153,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 						Message: err.Error(),
 					}, errorSuccess{})
 				}
-			case "subscribe":
+			case "subscribe": //request to subscribe to a publisher to start receiving messages
 				subscribeRequest := subscribeRequest{}
 				err := json.Unmarshal([]byte(message), &subscribeRequest)
 				if err != nil {
@@ -175,7 +176,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 					}, errorSuccess{})
 					client.subscriptionManager.newSubscriptionChannel <- subscription
 				}
-			case "confirm_messages":
+			case "confirm_messages": //request to confirm that the client received a set of messages from a subscription
 				confirmRequest := confirmRequest{}
 				err := json.Unmarshal([]byte(message), &confirmRequest)
 				if err != nil {
@@ -208,6 +209,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 	}
 }
 
+//loop running in a goroutine to handle deleting expired messages
 func handleExpiredMessages(mongoManager *mongoManager) {
 
 	for {

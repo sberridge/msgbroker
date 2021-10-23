@@ -5,3 +5,4 @@ services:
         ports:
             - "27017:27017"
         container_name: message_broker_db
+    
