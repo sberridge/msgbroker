@@ -14,24 +14,24 @@ import (
 
 type subscription struct {
 	id                      string
-	publisherId             string
-	clientId                string
+	publisherID             string
+	clientID                string
 	cancelChannel           chan bool
-	messagesChannel         chan []messageItem
+	messagesChannel         chan []jsonMessageItem
 	receiveConfirmedChannel chan *subscriptionMessagesConfirmation
 }
 
-type messageItem struct {
+type jsonMessageItem struct {
 	Id             string `json:"id"`
-	PublisherId    string `json:"publisher_id"`
-	SubscriptionId string `json:"subscription_id"`
+	PublisherID    string `json:"publisher_id"`
+	SubscriptionID string `json:"subscription_id"`
 	Payload        string `json:"payload"`
 }
 
 type bsonMessage struct {
 	Id             string `bson:"_id"`
-	PublisherId    string `bson:"publisher_id"`
-	SubscriptionId string `bson:"subscription_id"`
+	PublisherID    string `bson:"publisher_id"`
+	SubscriptionID string `bson:"subscription_id"`
 	Payload        string `bson:"payload"`
 }
 
@@ -45,9 +45,9 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 	for {
 		collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
 		filter := bson.D{
-			primitive.E{Key: "publisher_id", Value: sub.publisherId},
+			primitive.E{Key: "publisher_id", Value: sub.publisherID},
 			primitive.E{Key: "received_by", Value: bson.D{
-				primitive.E{Key: "$nin", Value: []string{sub.clientId}},
+				primitive.E{Key: "$nin", Value: []string{sub.clientID}},
 			}},
 		}
 
@@ -58,7 +58,7 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 			primitive.E{Key: "ttl", Value: 1},
 		}
 		results, err := mongoFindMany(collection, options.Find().SetProjection(projection).SetSort(bson.D{primitive.E{Key: "date_created", Value: 1}}).SetLimit(10), filter)
-		messages := []messageItem{}
+		messages := []jsonMessageItem{}
 		if err != nil {
 			fmt.Println(err.Error())
 			//todo: error logging?
@@ -68,8 +68,8 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 			defer cancel()
 			results.All(ctx, &bsonMessages)
 			for _, message := range bsonMessages {
-				messageItem := messageItem(message)
-				messageItem.SubscriptionId = sub.id
+				messageItem := jsonMessageItem(message)
+				messageItem.SubscriptionID = sub.id
 				messages = append(messages, messageItem)
 			}
 		}
@@ -100,7 +100,7 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 			}
 			update := bson.D{
 				primitive.E{Key: "$push", Value: bson.D{
-					primitive.E{Key: "received_by", Value: sub.clientId},
+					primitive.E{Key: "received_by", Value: sub.clientID},
 				}},
 			}
 			res, err := mongoUpdateMany(collection, filter, update)
@@ -117,10 +117,10 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 
 }
 
-func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId string) (*subscription, error) {
+func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherID string) (*subscription, error) {
 
 	publisherCol := mongoManager.connection.Database("message-broker").Collection("publishers")
-	publisherFilter := bson.D{primitive.E{Key: "_id", Value: publisherId}}
+	publisherFilter := bson.D{primitive.E{Key: "_id", Value: publisherID}}
 	result, _ := mongoCount(publisherCol, publisherFilter)
 	if result == 0 {
 		return nil, errors.New("publisher not found")
@@ -128,7 +128,7 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId 
 
 	col := mongoManager.connection.Database("message-broker").Collection("clients")
 	filter := bson.D{primitive.E{Key: "_id", Value: owner.id},
-		primitive.E{Key: "subscriptions.publisher_id", Value: publisherId},
+		primitive.E{Key: "subscriptions.publisher_id", Value: publisherID},
 	}
 	result, _ = mongoCount(col, filter)
 
@@ -141,7 +141,7 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId 
 	update := bson.D{primitive.E{Key: "$push", Value: bson.D{
 		primitive.E{Key: "subscriptions", Value: bson.D{
 			primitive.E{Key: "_id", Value: id},
-			primitive.E{Key: "publisher_id", Value: publisherId},
+			primitive.E{Key: "publisher_id", Value: publisherID},
 		}},
 	}}}
 
@@ -153,11 +153,11 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId 
 
 	sub := subscription{
 		id:                      id,
-		publisherId:             publisherId,
-		clientId:                owner.id,
+		publisherID:             publisherID,
+		clientID:                owner.id,
 		cancelChannel:           make(chan bool),
 		receiveConfirmedChannel: make(chan *subscriptionMessagesConfirmation),
-		messagesChannel:         make(chan []messageItem),
+		messagesChannel:         make(chan []jsonMessageItem),
 	}
 	return &sub, nil
 

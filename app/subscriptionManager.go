@@ -28,7 +28,7 @@ func (subManager *subscriptionManager) receiveLoop() {
 			case messages := <-sub.messagesChannel:
 				if len(messages) > 0 {
 					subManager.sendToClientChannel <- sendRequest{
-						jSONCommunication{
+						jsonCommunication{
 							Action: "messages",
 							Data:   messages,
 						},
@@ -93,7 +93,7 @@ func (subManager *subscriptionManager) managerLoop(mongoManager *mongoManager) {
 		case confirmation := <-subManager.confirmChannel:
 			subMessages := make(map[string][]string)
 			for _, msg := range confirmation.messages {
-				subMessages[msg.SubscriptionId] = append(subMessages[msg.SubscriptionId], msg.Id)
+				subMessages[msg.SubscriptionID] = append(subMessages[msg.SubscriptionID], msg.Id)
 			}
 			subConfirmedChannels := []chan int{}
 			for key, v := range subMessages {

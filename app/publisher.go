@@ -11,10 +11,10 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-type publisher struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Owner_id string `json:"owner_id"`
+type jsonPublisher struct {
+	Id      string `json:"id"`
+	Name    string `json:"name"`
+	OwnerID string `json:"owner_id"`
 }
 
 func checkPublisherExists(name string, mongoManager *mongoManager) (bool, error) {
@@ -44,7 +44,7 @@ func registerPublisher(owner *clientConnection, data newPublisherRequestData, mo
 	return
 }
 
-func newPublisher(owner *clientConnection, data newPublisherRequestData, mongoManager *mongoManager) (*publisher, error) {
+func newPublisher(owner *clientConnection, data newPublisherRequestData, mongoManager *mongoManager) (*jsonPublisher, error) {
 	exists, err := checkPublisherExists(data.Name, mongoManager)
 	if err != nil {
 		return nil, err
@@ -56,10 +56,10 @@ func newPublisher(owner *clientConnection, data newPublisherRequestData, mongoMa
 	if err != nil {
 		return nil, err
 	}
-	publisher := publisher{
-		Id:       newId,
-		Name:     data.Name,
-		Owner_id: owner.id,
+	publisher := jsonPublisher{
+		Id:      newId,
+		Name:    data.Name,
+		OwnerID: owner.id,
 	}
 	return &publisher, nil
 }
@@ -67,7 +67,7 @@ func newPublisher(owner *clientConnection, data newPublisherRequestData, mongoMa
 func publishMessage(owner *clientConnection, data publishMessageRequestData, mongoManager *mongoManager) (bool, error) {
 
 	col := mongoManager.connection.Database("message-broker").Collection("publishers")
-	filter := bson.D{primitive.E{Key: "_id", Value: data.Publisher_id}, primitive.E{Key: "owner_id", Value: owner.id}}
+	filter := bson.D{primitive.E{Key: "_id", Value: data.PublisherID}, primitive.E{Key: "owner_id", Value: owner.id}}
 
 	count, err := mongoCount(col, filter)
 	if err != nil {
@@ -86,7 +86,7 @@ func publishMessage(owner *clientConnection, data publishMessageRequestData, mon
 	messagesCollection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
 	_, err = mongoInsertOne(messagesCollection, bson.D{
 		primitive.E{Key: "_id", Value: uuid.New().String()},
-		primitive.E{Key: "publisher_id", Value: data.Publisher_id},
+		primitive.E{Key: "publisher_id", Value: data.PublisherID},
 		primitive.E{Key: "payload", Value: data.Payload},
 		primitive.E{Key: "date_created", Value: time.Now()},
 		primitive.E{Key: "ttl", Value: timeToExpire},
@@ -104,7 +104,7 @@ type bsonPublisher struct {
 	OwnerID string `bson:"owner_id"`
 }
 
-func getPublishers(owner *clientConnection, mongoManager *mongoManager) ([]publisher, error) {
+func getPublishers(owner *clientConnection, mongoManager *mongoManager) ([]jsonPublisher, error) {
 	col := mongoManager.connection.Database("message-broker").Collection("publishers")
 	filter := bson.D{primitive.E{Key: "owner_id", Value: owner.id}}
 
@@ -117,15 +117,15 @@ func getPublishers(owner *clientConnection, mongoManager *mongoManager) ([]publi
 		return nil, err
 	}
 	bpublishers := []bsonPublisher{}
-	publishers := []publisher{}
+	publishers := []jsonPublisher{}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	results.All(ctx, &bpublishers)
 	for _, p := range bpublishers {
-		publishers = append(publishers, publisher{
-			Id:       p.Id,
-			Name:     p.Name,
-			Owner_id: p.OwnerID,
+		publishers = append(publishers, jsonPublisher{
+			Id:      p.Id,
+			Name:    p.Name,
+			OwnerID: p.OwnerID,
 		})
 	}
 	return publishers, nil

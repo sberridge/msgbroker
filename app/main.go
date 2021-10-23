@@ -24,7 +24,7 @@ type errorSuccess struct {
 }
 
 //struct to define JSON messages sent to and from the client
-type jSONCommunication struct {
+type jsonCommunication struct {
 	Action  string      `json:"action"`
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
@@ -46,9 +46,9 @@ type newPublisherRequest struct {
 }
 
 type publishMessageRequestData struct {
-	Publisher_id string `json:"publisher_id"`
-	Ttl          int64  `json:"ttl"`
-	Payload      string `json:"payload"`
+	PublisherID string `json:"publisher_id"`
+	Ttl         int64  `json:"ttl"`
+	Payload     string `json:"payload"`
 }
 type publishMessageRequest struct {
 	Action  string                    `json:"action"`
@@ -57,7 +57,7 @@ type publishMessageRequest struct {
 }
 
 type subscribeRequestData struct {
-	Publisher_id string `json:"publisher_id"`
+	PublisherID string `json:"publisher_id"`
 }
 type subscribeRequest struct {
 	Action  string               `json:"action"`
@@ -67,7 +67,7 @@ type subscribeRequest struct {
 
 type confirmMessageData struct {
 	Id             string `json:"id"`
-	SubscriptionId string `json:"subscription_id"`
+	SubscriptionID string `json:"subscription_id"`
 }
 type confirmRequestData struct {
 	Messages []confirmMessageData `json:"messages"`
@@ -83,10 +83,10 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 	for {
 		select {
 		case message := <-client.receiveChannel:
-			jsonMsg := jSONCommunication{}
+			jsonMsg := jsonCommunication{}
 			err := json.Unmarshal([]byte(message), &jsonMsg)
 			if err != nil {
-				client.send(jSONCommunication{
+				client.send(jsonCommunication{
 					Action:  "invalid_message",
 					Message: "The message sent was incorrectly formatted",
 				}, errorSuccess{})
@@ -97,7 +97,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				newPublisherRequest := newPublisherRequest{}
 				err := json.Unmarshal([]byte(message), &newPublisherRequest)
 				if err != nil {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_registering_publisher",
 						Message: "Invalid json format",
 					}, errorSuccess{})
@@ -105,12 +105,12 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				}
 				publisher, err := newPublisher(client, newPublisherRequest.Data, mongoManager)
 				if err != nil {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_registering_publisher",
 						Message: err.Error(),
 					}, errorSuccess{})
 				} else {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action: "publisher_registered",
 						Data:   publisher,
 					}, errorSuccess{})
@@ -118,13 +118,13 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 			case "get_publishers":
 				publishers, err := getPublishers(client, mongoManager)
 				if err != nil {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_fetching_publishers",
 						Message: err.Error(),
 					}, errorSuccess{})
 					break
 				}
-				client.send(jSONCommunication{
+				client.send(jsonCommunication{
 					Action: "your_publishers",
 					Data:   publishers,
 				}, errorSuccess{})
@@ -132,7 +132,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				publishMessageRequest := publishMessageRequest{}
 				err := json.Unmarshal([]byte(message), &publishMessageRequest)
 				if err != nil {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_publishing_message",
 						Message: "Invalid json format",
 					}, errorSuccess{})
@@ -141,13 +141,13 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				publishedMessage, err := publishMessage(client, publishMessageRequest.Data, mongoManager)
 				if publishedMessage {
 
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "message_published",
 						Message: "Message published",
 					}, errorSuccess{})
 					fmt.Println("done")
 				} else {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_publishing_message",
 						Message: err.Error(),
 					}, errorSuccess{})
@@ -156,20 +156,20 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				subscribeRequest := subscribeRequest{}
 				err := json.Unmarshal([]byte(message), &subscribeRequest)
 				if err != nil {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_subscribing",
 						Message: "Invalid json format",
 					}, errorSuccess{})
 					break
 				}
-				subscription, err := subscribe(client, mongoManager, subscribeRequest.Data.Publisher_id)
+				subscription, err := subscribe(client, mongoManager, subscribeRequest.Data.PublisherID)
 				if err != nil {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_subscribing",
 						Message: err.Error(),
 					}, errorSuccess{})
 				} else {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "subscribed",
 						Message: "Subscribed",
 					}, errorSuccess{})
@@ -179,7 +179,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				confirmRequest := confirmRequest{}
 				err := json.Unmarshal([]byte(message), &confirmRequest)
 				if err != nil {
-					client.send(jSONCommunication{
+					client.send(jsonCommunication{
 						Action:  "failed_confirmation",
 						Message: "Invalid json format",
 					}, errorSuccess{})
@@ -191,7 +191,7 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 				}
 				client.subscriptionManager.confirmChannel <- &confirmMessagesStruct
 				confirmed := <-confirmMessagesStruct.numberConfirmedChannel
-				client.send(jSONCommunication{
+				client.send(jsonCommunication{
 					Action: "messages_confirmed",
 					Data: map[string]int{
 						"confirmed": confirmed,
@@ -291,10 +291,10 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	for _, sub := range bsonClient.Subscriptions {
 		client.subscriptionManager.newSubscriptionChannel <- &subscription{
 			id:                      sub.Id,
-			publisherId:             sub.PublisherId,
-			clientId:                client.id,
+			publisherID:             sub.PublisherId,
+			clientID:                client.id,
 			cancelChannel:           make(chan bool),
-			messagesChannel:         make(chan []messageItem),
+			messagesChannel:         make(chan []jsonMessageItem),
 			receiveConfirmedChannel: make(chan *subscriptionMessagesConfirmation),
 		}
 	}

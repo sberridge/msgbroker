@@ -12,20 +12,20 @@ import (
 )
 
 //response sent to and from the client during authentication
-type jSONAuthResponse struct {
+type jsonAuthResponse struct {
 	Register bool   `json:"register"`
 	Name     string `json:"name"`
 	UniqueId string `json:"id"`
 }
 
-type bSONSubscription struct {
+type bsonSubscription struct {
 	Id          string `bson:"_id"`
 	PublisherId string `bson:"publisher_id"`
 }
 type bSONClient struct {
 	Id            string             `bson:"_id"`
 	Name          string             `bson:"name"`
-	Subscriptions []bSONSubscription `bson:"subscriptions"`
+	Subscriptions []bsonSubscription `bson:"subscriptions"`
 }
 
 //authenticate a client connection
@@ -37,7 +37,7 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 	}
 
 	//request to send message to client asking them to authenticate
-	go client.send(jSONCommunication{
+	go client.send(jsonCommunication{
 		Action:  "authenticate",
 		Message: "Please authenticate",
 	}, successError)
@@ -55,18 +55,18 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 	select {
 	case message = <-client.receiveChannel:
 	case <-timeout:
-		client.send(jSONCommunication{
+		client.send(jsonCommunication{
 			Action:  "authentication_failed",
 			Message: "Authentication timed out",
 		}, errorSuccess{})
 		return nil, errors.New("authentication timed out")
 	}
 
-	authResponse := jSONAuthResponse{}
+	authResponse := jsonAuthResponse{}
 	err := json.Unmarshal([]byte(message), &authResponse) //parse response
 	if err != nil {
 		//failed parsing response
-		client.send(jSONCommunication{
+		client.send(jsonCommunication{
 			Action:  "authentication_failed",
 			Message: "Failed authentication",
 		}, errorSuccess{})
@@ -92,7 +92,7 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 			_, err := mongoInsertOne(col, bson.D{primitive.E{Key: "_id", Value: id}, primitive.E{Key: "name", Value: name}})
 			if err != nil {
 				//failed inserting the client record
-				client.send(jSONCommunication{
+				client.send(jsonCommunication{
 					Action:  "authentication_failed",
 					Message: "Failed creating client",
 				}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
@@ -103,9 +103,9 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 			client.id = id
 
 			//request to send message to the client with their new details
-			client.send(jSONCommunication{
+			client.send(jsonCommunication{
 				Action: "authentication_successful",
-				Data: jSONAuthResponse{
+				Data: jsonAuthResponse{
 					Register: true,
 					Name:     name,
 					UniqueId: id,
@@ -118,7 +118,7 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 			}, nil
 		} else if err != nil {
 			//failed due to db error
-			client.send(jSONCommunication{
+			client.send(jsonCommunication{
 				Action:  "authentication_failed",
 				Message: "Error occurred",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
@@ -126,7 +126,7 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		}
 
 		//client already exists
-		client.send(jSONCommunication{
+		client.send(jsonCommunication{
 			Action:  "authentication_failed",
 			Message: "Client already exists",
 		}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
@@ -145,7 +145,7 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		if err == mongo.ErrNoDocuments {
 
 			//not found
-			client.send(jSONCommunication{
+			client.send(jsonCommunication{
 				Action:  "authentication_failed",
 				Message: "Incorrect credentials",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
@@ -153,7 +153,7 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		} else if err != nil {
 
 			//db error
-			client.send(jSONCommunication{
+			client.send(jsonCommunication{
 				Action:  "authentication_failed",
 				Message: "Error occurred",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
@@ -169,13 +169,13 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		client.name = clientName
 
 		//create response for the user with the clients ID and name
-		response := jSONAuthResponse{
+		response := jsonAuthResponse{
 			UniqueId: clientId,
 			Name:     clientName,
 		}
 
 		//request to send success message to the clients
-		go client.send(jSONCommunication{
+		go client.send(jsonCommunication{
 			Action: "authentication_successful",
 			Data:   response,
 		}, successError) //this time we do want to check the response so we're supplying channels
