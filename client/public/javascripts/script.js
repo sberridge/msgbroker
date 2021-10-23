@@ -5,6 +5,7 @@
         if("message" in data) {
             addMessage(data.message);
         }
+        console.log(data);
         switch(data.action) {
             case "authentication_successful":
                 clearMessages();
@@ -19,6 +20,7 @@
                 break;
             case "your_publishers":
                 if(data.data.length > 0) {
+                    console.log(data);
                     for(var i = 0, l = data.data.length; i < l; i++) {
                         setupPublisher(data.data[i]);
                     }                    
