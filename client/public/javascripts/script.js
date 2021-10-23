@@ -146,6 +146,9 @@
         let head = document.createElement('h3');
         head.innerHTML = publisher.name;
         container.appendChild(head);
+        let idHead = document.createElement('h4');
+        idHead.innerHTML = "ID: " + publisher.id;
+        container.appendChild(idHead);
         let form = document.createElement('form');
         form.dataset.id = publisher.id;
         let messageInput = createFormField("message_" + publisher.id, "Message", "textarea",{
@@ -186,12 +189,12 @@
             registerArea.style.display = '';
             authArea.style.display = 'none';
             registerName.setAttribute('required',"true");
-            authID.removeAttributeNS('required');
+            authID.removeAttribute('required');
         } else {
             registerArea.style.display = 'none';
             authArea.style.display = '';
             authID.setAttribute('required',"true");
-            registerName.removeAttributeNS('required');
+            registerName.removeAttribute('required');
         }
     });
 
