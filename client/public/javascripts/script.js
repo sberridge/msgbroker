@@ -24,6 +24,30 @@
                     }                    
                 }
                 break;
+            case "publisher_registered":
+                addPublisherName.value = '';
+                setupPublisher(data.data);
+                break;
+            case "messages":
+                addMessage("received messages...");
+                let confirm = [];
+                for(let i in data.data) {
+                    let message = data.data[i];
+                    addMessage("From subscription: " + message.subscription_id);
+                    addMessage("Payload");
+                    addMessage(message.payload);
+                    addMessage("");
+                    confirm.push({
+                        subscription_id: message.subscription_id,
+                        id: message.id
+                    });
+                }
+                sendWSMessage("confirm_messages",null,{
+                    messages: confirm
+                });
+                break;
+            case "messages_confirmed":
+                addMessage("confirmed receiving " + data.data.confirmed + " messages");
         }
     });
     let wsReady = false;
@@ -36,10 +60,20 @@
         registerName = document.getElementById('auth-name'),
         authID = document.getElementById('auth-id'),
         messageArea = document.getElementById('message-area'),
+        addPublisherForm = document.getElementById('add-publisher-form'),
+        addPublisherName = document.getElementById('add-publisher-name'),
         publisherArea = document.getElementById('publisher-area'),
         publishersContainer = document.getElementById('publishers-container');
 
-    function createFormField(id,label,type) {
+    function sendWSMessage(action,message,data) {
+        ws.send(JSON.stringify({
+            action: action,
+            message: message,
+            data: data
+        }));
+    }
+
+    function createFormField(id,label,type,attributes) {
         let formField = document.createElement('div');
         formField.classList.add('c-form-field');
         let fieldLabel = document.createElement('div');
@@ -61,25 +95,37 @@
         }
         
         input.id = id;
+
+        if(typeof attributes !== "undefined") {
+            for(let key in attributes) {
+                input.setAttribute(key,attributes[key]);
+            }
+        }
         
         fieldField.appendChild(input);
         return formField;
     }
 
+
+    addPublisherForm.addEventListener('submit',(e)=>{
+        e.preventDefault();
+        if(addPublisherName.value.trim() === '') return;
+        sendWSMessage("register_publisher",null,{
+            name: addPublisherName.value
+        });
+    });
+
     function publishMessage(e) {
         e.preventDefault();
         let target = e.target;
         let textArea = document.getElementById('message_' + target.dataset.id);
-        if(textArea.value.trim == '') return;
-
-        ws.send(JSON.stringify({
-            "action": "publish_message",
-            "data": {
-                "publisher_id": target.dataset.id,
-                "ttl": 100,
-                "payload": textArea.value
-            }
-        }));
+        let ttl = document.getElementById('ttl_' + target.dataset.id);
+        if(textArea.value.trim == '' || ttl.value == '' || ttl.value <= 0) return;
+        sendWSMessage("publish_message",null,{
+            "publisher_id": target.dataset.id,
+            "ttl": parseInt(ttl.value),
+            "payload": textArea.value
+        });
     }
     function setupPublisher(publisher) {
         let container = document.createElement('div');
@@ -89,8 +135,16 @@
         container.appendChild(head);
         let form = document.createElement('form');
         form.dataset.id = publisher.id;
-        let input = createFormField("message_" + publisher.id, "Message", "textarea");
-        form.appendChild(input);
+        let messageInput = createFormField("message_" + publisher.id, "Message", "textarea",{
+            required: true
+        });
+        form.appendChild(messageInput);
+        let ttlInput = createFormField("ttl_" + publisher.id, "Time to Live", "number",{
+            required: true,
+            min: 10,
+            value: 10
+        });
+        form.appendChild(ttlInput);
         let submit = document.createElement('input');
         submit.type = 'submit';
         submit.value = "Send Message";

@@ -17,10 +17,8 @@ type subscription struct {
 	publisherId             string
 	clientId                string
 	cancelChannel           chan bool
-	cancelConfirmChannel    chan bool
 	messagesChannel         chan []messageItem
-	confirmedChannel        chan []string
-	receiveConfirmedChannel chan []string
+	receiveConfirmedChannel chan *subscriptionMessagesConfirmation
 }
 
 type messageItem struct {
@@ -30,36 +28,16 @@ type messageItem struct {
 	Payload        string `json:"payload"`
 }
 
-func (sub *subscription) confirmLoop(mongoManager *mongoManager) {
-	closed := false
-	for {
-		select {
-		case confirmedId := <-sub.confirmedChannel:
-			collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
-			filter := bson.D{
-				primitive.E{Key: "_id", Value: bson.D{
-					primitive.E{Key: "$in", Value: confirmedId},
-				}},
-			}
-			update := bson.D{
-				primitive.E{Key: "$push", Value: bson.D{
-					primitive.E{Key: "received_by", Value: sub.clientId},
-				}},
-			}
-			res, err := mongoUpdateMany(collection, filter, update)
-			if err != nil {
-				fmt.Println(err.Error())
-			} else {
-				fmt.Println(res.ModifiedCount)
-			}
+type bsonMessage struct {
+	Id             string `bson:"_id"`
+	PublisherId    string `bson:"publisher_id"`
+	SubscriptionId string `bson:"subscription_id"`
+	Payload        string `bson:"payload"`
+}
 
-		case <-sub.cancelConfirmChannel:
-			closed = true
-		}
-		if closed {
-			break
-		}
-	}
+type subscriptionMessagesConfirmation struct {
+	messages         []string
+	confirmedChannel chan int
 }
 
 func (sub *subscription) loop(mongoManager *mongoManager) {
@@ -85,22 +63,14 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 			fmt.Println(err.Error())
 			//todo: error logging?
 		} else {
+			bsonMessages := []bsonMessage{}
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			defer cancel()
-			for {
-				hasRow := results.Next(ctx)
-				if !hasRow {
-					break
-				}
-				row := results.Current
-				msg := messageItem{
-					Id:             row.Lookup("_id").String(),
-					PublisherId:    row.Lookup("publisher_id").String(),
-					Payload:        row.Lookup("payload").String(),
-					SubscriptionId: sub.id,
-				}
-
-				messages = append(messages, msg)
+			results.All(ctx, &bsonMessages)
+			for _, message := range bsonMessages {
+				messageItem := messageItem(message)
+				messageItem.SubscriptionId = sub.id
+				messages = append(messages, messageItem)
 			}
 		}
 		if len(messages) > 0 {
@@ -112,8 +82,26 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 			if closed {
 				break
 			}
-			msgs := <-sub.receiveConfirmedChannel
-			sub.confirmedChannel <- msgs
+			confirmation := <-sub.receiveConfirmedChannel
+
+			collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
+			filter := bson.D{
+				primitive.E{Key: "_id", Value: bson.D{
+					primitive.E{Key: "$in", Value: confirmation.messages},
+				}},
+			}
+			update := bson.D{
+				primitive.E{Key: "$push", Value: bson.D{
+					primitive.E{Key: "received_by", Value: sub.clientId},
+				}},
+			}
+			res, err := mongoUpdateMany(collection, filter, update)
+			if err != nil {
+				confirmation.confirmedChannel <- 0
+			} else {
+				confirmation.confirmedChannel <- int(res.ModifiedCount)
+			}
+
 		}
 
 		<-time.After(time.Second * 5)
@@ -160,9 +148,7 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherId 
 		publisherId:             publisherId,
 		clientId:                owner.id,
 		cancelChannel:           make(chan bool),
-		confirmedChannel:        make(chan []string),
-		receiveConfirmedChannel: make(chan []string),
-		cancelConfirmChannel:    make(chan bool),
+		receiveConfirmedChannel: make(chan *subscriptionMessagesConfirmation),
 		messagesChannel:         make(chan []messageItem),
 	}
 	return &sub, nil

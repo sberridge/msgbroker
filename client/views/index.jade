@@ -21,15 +21,25 @@ block content
           input(type="text", required="true")#auth-id
     input(type="submit", value="Auth")
 
+  div#subscription-area
+    h2="Subscriptions"
+    form#subscribe-form(action="#")
+      h3="Subscribe"
+      div.c-form-field
+        div.c-form-field__label
+          label(for="add-subscription-id")="Publisher ID"
+        div.c-form-field__field
+          input(type="text", required="true")#add-subscription-id
+      input(type="submit", value="Subscribe")
   div#publisher-area(style="display: none;")
     h2="Publishers"
     form#add-publisher-form(action="#")
       h3="New Publisher"
       div.c-form-field
         div.c-form-field__label
-          label(for="new-publisher-name")="Publisher Name"
+          label(for="add-publisher-name")="Publisher Name"
         div.c-form-field__field
-          input(type="text", required="true")#new-publisher-name
+          input(type="text", required="true")#add-publisher-name
       input(type="submit", value="Create Publisher")
     div#publishers-container
         

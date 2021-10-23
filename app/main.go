@@ -185,7 +185,18 @@ func clientMessagesLoop(client *clientConnection, mongoManager *mongoManager) {
 					}, errorSuccess{})
 					break
 				}
-				client.subscriptionManager.confirmChannel <- confirmRequest.Data.Messages
+				confirmMessagesStruct := subscriptionManagerConfirmation{
+					messages:               confirmRequest.Data.Messages,
+					numberConfirmedChannel: make(chan int),
+				}
+				client.subscriptionManager.confirmChannel <- &confirmMessagesStruct
+				confirmed := <-confirmMessagesStruct.numberConfirmedChannel
+				client.send(jSONCommunication{
+					Action: "messages_confirmed",
+					Data: map[string]int{
+						"confirmed": confirmed,
+					},
+				}, errorSuccess{})
 			}
 		case <-client.receiveClosedChannel:
 			closed = true
@@ -267,7 +278,7 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 	subManager := subscriptionManager{
 		subscriptions:             map[string]*subscription{},
 		newSubscriptionChannel:    make(chan *subscription),
-		confirmChannel:            make(chan []confirmMessageData),
+		confirmChannel:            make(chan *subscriptionManagerConfirmation),
 		removeSubscriptionChannel: make(chan string),
 		cancelReceiveChannel:      make(chan bool),
 		cancelManagerChannel:      make(chan bool),
@@ -284,9 +295,7 @@ func handleConnection(con *websocket.Conn, managerChannels connectionManagerChan
 			clientId:                client.id,
 			cancelChannel:           make(chan bool),
 			messagesChannel:         make(chan []messageItem),
-			confirmedChannel:        make(chan []string),
-			receiveConfirmedChannel: make(chan []string),
-			cancelConfirmChannel:    make(chan bool),
+			receiveConfirmedChannel: make(chan *subscriptionMessagesConfirmation),
 		}
 	}
 
