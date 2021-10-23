@@ -20,30 +20,54 @@ type subscriptionManagerConfirmation struct {
 	numberConfirmedChannel chan int
 }
 
+func waitForSubMessages(sub *subscription, receiveChannel chan []jsonMessageItem, cancelChannel chan bool) {
+	select {
+	case messages := <-sub.messagesChannel:
+		receiveChannel <- messages
+	case <-cancelChannel:
+	}
+}
+
 func (subManager *subscriptionManager) receiveLoop() {
 	closed := false
 	for {
+		receiveSubMessagesChannels := []chan []jsonMessageItem{}
+		cancelReceiveSubMessagesChannels := []chan bool{}
 		for _, sub := range subManager.subscriptions {
-			select {
-			case messages := <-sub.messagesChannel:
-				if len(messages) > 0 {
-					subManager.sendToClientChannel <- sendRequest{
-						jsonCommunication{
-							Action: "messages",
-							Data:   messages,
-						},
-						errorSuccess{},
-					}
-				}
-			case <-subManager.cancelReceiveChannel:
-				closed = true
-			}
+
+			receiveSubMessageChannel := make(chan []jsonMessageItem)
+			cancelSubMessageChannel := make(chan bool)
+			receiveSubMessagesChannels = append(receiveSubMessagesChannels, receiveSubMessageChannel)
+			cancelReceiveSubMessagesChannels = append(cancelReceiveSubMessagesChannels, cancelSubMessageChannel)
+			go waitForSubMessages(sub, receiveSubMessageChannel, cancelSubMessageChannel)
+
+		}
+		allMessages := []jsonMessageItem{}
+		for i, receiveChannel := range receiveSubMessagesChannels {
 			if closed {
-				break
+				cancelReceiveSubMessagesChannels[i] <- true
+			} else {
+				select {
+				case messages := <-receiveChannel:
+					allMessages = append(allMessages, messages...)
+				case <-subManager.cancelReceiveChannel:
+					closed = true
+				}
 			}
+
 		}
 		if closed {
 			break
+		} else {
+			if len(allMessages) > 0 {
+				subManager.sendToClientChannel <- sendRequest{
+					jsonCommunication{
+						Action: "messages",
+						Data:   allMessages,
+					},
+					errorSuccess{},
+				}
+			}
 		}
 	}
 }
