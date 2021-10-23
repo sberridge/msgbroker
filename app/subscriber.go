@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -45,19 +44,19 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 	for {
 		collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
 		filter := bson.D{
-			primitive.E{Key: "publisher_id", Value: sub.publisherID},
-			primitive.E{Key: "received_by", Value: bson.D{
-				primitive.E{Key: "$nin", Value: []string{sub.clientID}},
+			{Key: "publisher_id", Value: sub.publisherID},
+			{Key: "received_by", Value: bson.D{
+				{Key: "$nin", Value: []string{sub.clientID}},
 			}},
 		}
 
 		projection := bson.D{
-			primitive.E{Key: "publisher_id", Value: 1},
-			primitive.E{Key: "payload", Value: 1},
-			primitive.E{Key: "date_created", Value: 1},
-			primitive.E{Key: "ttl", Value: 1},
+			{Key: "publisher_id", Value: 1},
+			{Key: "payload", Value: 1},
+			{Key: "date_created", Value: 1},
+			{Key: "ttl", Value: 1},
 		}
-		results, err := mongoFindMany(collection, options.Find().SetProjection(projection).SetSort(bson.D{primitive.E{Key: "date_created", Value: 1}}).SetLimit(10), filter)
+		results, err := mongoFindMany(collection, options.Find().SetProjection(projection).SetSort(bson.D{{Key: "date_created", Value: 1}}).SetLimit(10), filter)
 		messages := []jsonMessageItem{}
 		if err != nil {
 			fmt.Println(err.Error())
@@ -94,13 +93,13 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 
 			collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
 			filter := bson.D{
-				primitive.E{Key: "_id", Value: bson.D{
-					primitive.E{Key: "$in", Value: confirmation.messages},
+				{Key: "_id", Value: bson.D{
+					{Key: "$in", Value: confirmation.messages},
 				}},
 			}
 			update := bson.D{
-				primitive.E{Key: "$push", Value: bson.D{
-					primitive.E{Key: "received_by", Value: sub.clientID},
+				{Key: "$push", Value: bson.D{
+					{Key: "received_by", Value: sub.clientID},
 				}},
 			}
 			res, err := mongoUpdateMany(collection, filter, update)
@@ -120,15 +119,15 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherID string) (*subscription, error) {
 
 	publisherCol := mongoManager.connection.Database("message-broker").Collection("publishers")
-	publisherFilter := bson.D{primitive.E{Key: "_id", Value: publisherID}}
+	publisherFilter := bson.D{{Key: "_id", Value: publisherID}}
 	result, _ := mongoCount(publisherCol, publisherFilter)
 	if result == 0 {
 		return nil, errors.New("publisher not found")
 	}
 
 	col := mongoManager.connection.Database("message-broker").Collection("clients")
-	filter := bson.D{primitive.E{Key: "_id", Value: owner.id},
-		primitive.E{Key: "subscriptions.publisher_id", Value: publisherID},
+	filter := bson.D{{Key: "_id", Value: owner.id},
+		{Key: "subscriptions.publisher_id", Value: publisherID},
 	}
 	result, _ = mongoCount(col, filter)
 
@@ -136,12 +135,12 @@ func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherID 
 		return nil, errors.New("already subscribed")
 	}
 
-	filter = bson.D{primitive.E{Key: "_id", Value: owner.id}}
+	filter = bson.D{{Key: "_id", Value: owner.id}}
 	id := uuid.New().String()
-	update := bson.D{primitive.E{Key: "$push", Value: bson.D{
-		primitive.E{Key: "subscriptions", Value: bson.D{
-			primitive.E{Key: "_id", Value: id},
-			primitive.E{Key: "publisher_id", Value: publisherID},
+	update := bson.D{{Key: "$push", Value: bson.D{
+		{Key: "subscriptions", Value: bson.D{
+			{Key: "_id", Value: id},
+			{Key: "publisher_id", Value: publisherID},
 		}},
 	}}}
 

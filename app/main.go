@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 var upgrader = websocket.Upgrader{
@@ -214,9 +213,9 @@ func handleExpiredMessages(mongoManager *mongoManager) {
 
 	for {
 		filter := bson.D{
-			primitive.E{Key: "ttl", Value: bson.D{
-				primitive.E{Key: "$lt", Value: time.Now().Unix()},
-				primitive.E{Key: "$ne", Value: 0},
+			{Key: "ttl", Value: bson.D{
+				{Key: "$lt", Value: time.Now().Unix()},
+				{Key: "$ne", Value: 0},
 			},
 			},
 		}

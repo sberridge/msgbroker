@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -82,14 +81,14 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		//checking if client is already in the collection
 		name := authResponse.Name
 
-		filter := bson.D{primitive.E{Key: "name", Value: name}}
+		filter := bson.D{{Key: "name", Value: name}}
 		num, err := mongoCount(col, filter)
 
 		if num == 0 {
 
 			//client is not in the collection so inserting a new record
 			id := uuid.New().String()
-			_, err := mongoInsertOne(col, bson.D{primitive.E{Key: "_id", Value: id}, primitive.E{Key: "name", Value: name}})
+			_, err := mongoInsertOne(col, bson.D{{Key: "_id", Value: id}, {Key: "name", Value: name}})
 			if err != nil {
 				//failed inserting the client record
 				client.send(jsonCommunication{
@@ -137,8 +136,8 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 
 		id := authResponse.UniqueId
 
-		filter := bson.D{primitive.E{Key: "_id", Value: id}}
-		findProjection := bson.D{primitive.E{Key: "_id", Value: 1}, primitive.E{Key: "name", Value: 1}, primitive.E{Key: "subscriptions", Value: 1}}
+		filter := bson.D{{Key: "_id", Value: id}}
+		findProjection := bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: 1}, {Key: "subscriptions", Value: 1}}
 		result := mongoFindOne(col, findProjection, filter)
 		clientStruct := bSONClient{}
 		err = result.Decode(&clientStruct)
