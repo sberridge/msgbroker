@@ -73,16 +73,24 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 				messages = append(messages, messageItem)
 			}
 		}
+		select {
+		case sub.messagesChannel <- messages:
+		case <-sub.cancelChannel:
+			closed = true
+		}
+		if closed {
+			break
+		}
 		if len(messages) > 0 {
+			var confirmation *subscriptionMessagesConfirmation
 			select {
-			case sub.messagesChannel <- messages:
+			case confirmation = <-sub.receiveConfirmedChannel:
 			case <-sub.cancelChannel:
 				closed = true
 			}
 			if closed {
 				break
 			}
-			confirmation := <-sub.receiveConfirmedChannel
 
 			collection := mongoManager.connection.Database("message-broker").Collection("publisher_messages")
 			filter := bson.D{
@@ -96,15 +104,15 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 				}},
 			}
 			res, err := mongoUpdateMany(collection, filter, update)
-			if err != nil {
-				confirmation.confirmedChannel <- 0
-			} else {
-				confirmation.confirmedChannel <- int(res.ModifiedCount)
+			confirmed := 0
+			if err == nil {
+				confirmed = int(res.ModifiedCount)
 			}
+			confirmation.confirmedChannel <- confirmed
 
 		}
 
-		<-time.After(time.Second * 5)
+		<-time.After(time.Second * 2)
 	}
 
 }

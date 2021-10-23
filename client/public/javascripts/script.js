@@ -15,6 +15,8 @@
                 ws.send(JSON.stringify({
                     Action: "get_publishers"
                 }));
+
+                subscriptionArea.style.display = '';
                 break;
             case "your_publishers":
                 if(data.data.length > 0) {
@@ -63,7 +65,18 @@
         addPublisherForm = document.getElementById('add-publisher-form'),
         addPublisherName = document.getElementById('add-publisher-name'),
         publisherArea = document.getElementById('publisher-area'),
-        publishersContainer = document.getElementById('publishers-container');
+        publishersContainer = document.getElementById('publishers-container'),
+        subscriptionArea = document.getElementById('subscription-area'),
+        subscribeForm = document.getElementById("subscribe-form"),
+        subscribeId = document.getElementById("add-subscription-id");
+
+    subscribeForm.addEventListener('submit',(e)=>{
+        e.preventDefault();
+        if(subscribeId.value == "") return;
+        sendWSMessage("subscribe",null,{
+            publisher_id: subscribeId.value
+        });
+    });
 
     function sendWSMessage(action,message,data) {
         ws.send(JSON.stringify({
