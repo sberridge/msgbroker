@@ -9,6 +9,7 @@
             case "authentication_successful":
                 clearMessages();
                 addMessage("Welcome " + data.data.name);
+                addMessage("Your ID: " + data.data.id);
                 authForm.parentNode.removeChild(authForm);
                 publisherArea.style.display = '';
                 ws.send(JSON.stringify({
