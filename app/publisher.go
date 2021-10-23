@@ -122,11 +122,7 @@ func getPublishers(owner *clientConnection, mongoManager *mongoManager) ([]jsonP
 	defer cancel()
 	results.All(ctx, &bpublishers)
 	for _, p := range bpublishers {
-		publishers = append(publishers, jsonPublisher{
-			Id:      p.Id,
-			Name:    p.Name,
-			OwnerID: p.OwnerID,
-		})
+		publishers = append(publishers, jsonPublisher(p))
 	}
 	return publishers, nil
 
