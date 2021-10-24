@@ -14,7 +14,7 @@ Clients can act as either a publisher, a subscriber, or both.
 * Second client registers to the service (subscriber)
     * Subscribe to publisher(s)
         * Start receiving messages from subscribed publishers
-            * Confirm received messages
+            * Client confirms received messages
 
 ## Installation
 
