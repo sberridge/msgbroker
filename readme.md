@@ -68,9 +68,11 @@ ws.send(JSON.stringify({
 
 ### Create Publisher
 
-The message broker functions with publishers and subscribers. 
+The message broker functions with publishers and subscribers.
 
-Publishers send out messages which are then consumed by subscribers.
+Once created, a publisher can be used to send out messages which will then be picked up and consumed by subscribers.
+
+A client can own multiple publishers if necessary in order to send out messages to different services or to help organise messages.
 
 Publishers are created by sending the following message to the service:
 
@@ -141,6 +143,8 @@ ws.send(JSON.stringify({
 ## Subscribers
 
 Subscribing to a publisher allows a client to receive published messages.
+
+A client can subscribe to multiple publishers if necessary to receive messages from different services.
 
 ### Subscribe
 
