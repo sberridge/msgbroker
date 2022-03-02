@@ -27,9 +27,7 @@ type bSONClient struct {
 	Subscriptions []bsonSubscription `bson:"subscriptions"`
 }
 
-//authenticate a client connection
-func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONClient, error) {
-
+func requestAuthentication(client *clientConnection) (bool, error) {
 	successError := errorSuccess{
 		errorChannel:   make(chan error),
 		successChannel: make(chan bool),
@@ -43,10 +41,13 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 
 	select {
 	case err := <-successError.errorChannel: //failed to request authentication
-		return nil, err
+		return false, err
 	case <-successError.successChannel: //success!
+		return true, nil
 	}
+}
 
+func getClientAuthenticationResponse(client *clientConnection) (*jsonAuthResponse, error) {
 	var message string
 
 	//attempt to receive message from the client, timeout after 30 seconds
@@ -60,7 +61,6 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		}, errorSuccess{})
 		return nil, errors.New("authentication timed out")
 	}
-
 	authResponse := jsonAuthResponse{}
 	err := json.Unmarshal([]byte(message), &authResponse) //parse response
 	if err != nil {
@@ -71,65 +71,82 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		}, errorSuccess{})
 		return nil, err
 	}
+	return &authResponse, nil
+}
 
+func registerNewClient(client *clientConnection, mongoManager *mongoManager, name string) (*bSONClient, error) {
 	//open collection containing client details
-	col := mongoManager.connection.Database("message-broker").Collection("clients")
+	col := mongoManager.openCollection("message-broker", "clients")
+	filter := bson.D{{Key: "name", Value: name}}
+	num, err := mongoCount(col, filter)
 
-	//if creating a new client
-	if authResponse.Register {
+	if num == 0 {
 
-		//checking if client is already in the collection
-		name := authResponse.Name
-
-		filter := bson.D{{Key: "name", Value: name}}
-		num, err := mongoCount(col, filter)
-
-		if num == 0 {
-
-			//client is not in the collection so inserting a new record
-			id := uuid.New().String()
-			_, err := mongoInsertOne(col, bson.D{{Key: "_id", Value: id}, {Key: "name", Value: name}})
-			if err != nil {
-				//failed inserting the client record
-				client.send(jsonCommunication{
-					Action:  "authentication_failed",
-					Message: "Failed creating client",
-				}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-				return nil, err
-			}
-
-			//set the new ID on the client connection
-			client.id = id
-
-			//request to send message to the client with their new details
-			client.send(jsonCommunication{
-				Action: "authentication_successful",
-				Data: jsonAuthResponse{
-					Register: true,
-					Name:     name,
-					UniqueId: id,
-				},
-			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-
-			return &bSONClient{
-				Id:   id,
-				Name: client.name,
-			}, nil
-		} else if err != nil {
-			//failed due to db error
+		//client is not in the collection so inserting a new record
+		id := uuid.New().String()
+		_, err := mongoInsertOne(col, bson.D{{Key: "_id", Value: id}, {Key: "name", Value: name}})
+		if err != nil {
+			//failed inserting the client record
 			client.send(jsonCommunication{
 				Action:  "authentication_failed",
-				Message: "Error occurred",
+				Message: "Failed creating client",
 			}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
 			return nil, err
 		}
 
-		//client already exists
+		//set the new ID on the client connection
+		client.id = id
+
+		//request to send message to the client with their new details
+		client.send(jsonCommunication{
+			Action: "authentication_successful",
+			Data: jsonAuthResponse{
+				Register: true,
+				Name:     name,
+				UniqueId: id,
+			},
+		}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
+
+		return &bSONClient{
+			Id:   id,
+			Name: client.name,
+		}, nil
+	} else if err != nil {
+		//failed due to db error
 		client.send(jsonCommunication{
 			Action:  "authentication_failed",
-			Message: "Client already exists",
+			Message: "Error occurred",
 		}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
-		return nil, errors.New("client exists")
+		return nil, err
+	}
+
+	//client already exists
+	client.send(jsonCommunication{
+		Action:  "authentication_failed",
+		Message: "Client already exists",
+	}, errorSuccess{}) //not supplying any channels for error/success since we don't really need to block here to check the response
+	return nil, errors.New("client exists")
+}
+
+//authenticate a client connection
+func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONClient, error) {
+
+	_, err := requestAuthentication(client)
+	if err != nil {
+		return nil, err
+	}
+
+	authResponse, err := getClientAuthenticationResponse(client)
+	if err != nil {
+		return nil, err
+	}
+
+	//open collection containing client details
+	col := mongoManager.openCollection("message-broker", "clients")
+
+	//if creating a new client
+	if authResponse.Register {
+		return registerNewClient(client, mongoManager, authResponse.Name)
 	} else {
 
 		//ID supplied so we're going to see if there is a valid client
@@ -171,6 +188,10 @@ func authenticate(client *clientConnection, mongoManager *mongoManager) (*bSONCl
 		response := jsonAuthResponse{
 			UniqueId: clientId,
 			Name:     clientName,
+		}
+		successError := errorSuccess{
+			errorChannel:   make(chan error),
+			successChannel: make(chan bool),
 		}
 
 		//request to send success message to the clients

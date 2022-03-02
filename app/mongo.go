@@ -13,6 +13,10 @@ type mongoManager struct {
 	connection *mongo.Client
 }
 
+func (mongoManager *mongoManager) openCollection(database string, collection string) *mongo.Collection {
+	return mongoManager.connection.Database(database).Collection(collection)
+}
+
 func startMongo() (*mongoManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
