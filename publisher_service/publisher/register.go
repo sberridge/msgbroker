@@ -37,29 +37,33 @@ func createRegistration(collection *mongo.Collection, name string) (string, erro
 	return id, nil
 }
 
-func handleRegistration(body io.ReadCloser, mongo *bezmongo.MongoService, session *sessions.Session) []byte {
+func handleRegistration(body io.ReadCloser, mongo *bezmongo.MongoService, session *sessions.Session, responseChannel chan []byte) {
 	registrationFailedMessage := "registration failed"
 	bytes, err := readBody(body)
 	if err != nil {
-		return createMessageResponse(false, registrationFailedMessage)
+		responseChannel <- createMessageResponse(false, registrationFailedMessage)
+		return
 	}
 	requestBody := registerRequest{}
 	err = json.Unmarshal(bytes, &requestBody)
 
 	if err != nil {
-		return createMessageResponse(false, registrationFailedMessage)
+		responseChannel <- createMessageResponse(false, registrationFailedMessage)
+		return
 	}
 
 	col := mongo.OpenCollection("message-broker", "clients")
 
 	if !checkExistingRegistration(col, requestBody.Name) {
-		return createMessageResponse(false, registrationFailedMessage)
+		responseChannel <- createMessageResponse(false, registrationFailedMessage)
+		return
 	}
 
 	id, err := createRegistration(col, requestBody.Name)
 
 	if err != nil {
-		return createMessageResponse(false, registrationFailedMessage)
+		responseChannel <- createMessageResponse(false, registrationFailedMessage)
+		return
 	}
 
 	res, _ := json.Marshal(registerSuccessResponse{
@@ -68,5 +72,6 @@ func handleRegistration(body io.ReadCloser, mongo *bezmongo.MongoService, sessio
 			Id: id,
 		},
 	})
-	return res
+	session.Values["auth_id"] = id
+	responseChannel <- res
 }

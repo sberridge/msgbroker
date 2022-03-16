@@ -15,17 +15,18 @@ type authRequest struct {
 }
 
 type bsonClient struct {
-	id   string `bson:"_id"`
-	name string `bson:"name"`
+	Id   string `bson:"_id"`
+	Name string `bson:"name"`
 }
 
-func handleAuth(body io.ReadCloser, mongo *bezmongo.MongoService, session *sessions.Session) []byte {
+func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sessions.Session, responseChannel chan []byte) {
 
 	bytes, err := readBody(body)
 	failedAuthMessage := "Authentication failed"
 	if err != nil {
 		fmt.Println(err)
-		return createMessageResponse(false, failedAuthMessage)
+		responseChannel <- createMessageResponse(false, failedAuthMessage)
+		return
 	}
 
 	requestBody := authRequest{}
@@ -33,20 +34,22 @@ func handleAuth(body io.ReadCloser, mongo *bezmongo.MongoService, session *sessi
 	err = json.Unmarshal(bytes, &requestBody)
 	if err != nil {
 		fmt.Println(err)
-		return createMessageResponse(false, failedAuthMessage)
+		responseChannel <- createMessageResponse(false, failedAuthMessage)
+		return
 	}
 
-	col := mongo.OpenCollection("message-broker", "clients")
+	col := bmongo.OpenCollection("message-broker", "clients")
 	id := requestBody.UniqueId
 
 	filter := bson.D{{Key: "_id", Value: id}}
-	findProjection := bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: 1}}
+	findProjection := bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: 1}, {Key: "subscriptions", Value: 1}}
 	result := bezmongo.FindOne(col, findProjection, filter)
 	clientStruct := bsonClient{}
 	err = result.Decode(&clientStruct)
 	if err != nil {
-		return createMessageResponse(false, failedAuthMessage)
+		responseChannel <- createMessageResponse(false, failedAuthMessage)
+		return
 	}
-	session.Values["auth_id"] = clientStruct.id
-	return createMessageResponse(true, fmt.Sprintf("Authenticated as %s", clientStruct.name))
+	session.Values["auth_id"] = clientStruct.Id
+	responseChannel <- createMessageResponse(true, fmt.Sprintf("Authenticated as %s", clientStruct.Name))
 }

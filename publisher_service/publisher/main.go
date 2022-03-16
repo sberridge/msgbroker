@@ -40,31 +40,39 @@ func createMessageResponse(success bool, message string) []byte {
 	return res
 }
 
+func checkAuth(session *sessions.Session) (string, bool) {
+	id := session.Values["auth_id"]
+	switch v := id.(type) {
+	case string:
+		return v, true
+	}
+	return "", false
+}
+
+func authResponse() []byte {
+	b, _ := json.Marshal(messageResponse{
+		Success: false,
+		Message: "Authentication failed",
+	})
+	return b
+}
+
 var store = sessions.NewCookieStore([]byte("rwerwerwer"))
+
+func getSession(r *http.Request) *sessions.Session {
+	session, _ := store.Get(r, "session")
+	return session
+}
 
 func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server {
 
 	server := &http.Server{Addr: ":8080"}
 
-	http.HandleFunc("/auth", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Add("content-type", "application/json")
-		session, _ := store.Get(r, "session")
-		switch r.Method {
-		case "POST":
-			rw.Write(handleAuth(r.Body, mongo, session))
-		}
-		session.Save(r, rw)
-	})
+	authRoutes(server, mongo)
 
-	http.HandleFunc("/register", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Add("content-type", "application/json")
-		session, _ := store.Get(r, "session")
-		switch r.Method {
-		case "POST":
-			rw.Write(handleRegistration(r.Body, mongo, session))
-		}
-		session.Save(r, rw)
-	})
+	registerRoutes(server, mongo)
+
+	publicationRoutes(server, mongo)
 
 	go func() {
 		defer wg.Done()

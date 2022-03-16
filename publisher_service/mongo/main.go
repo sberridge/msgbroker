@@ -46,6 +46,12 @@ func FindOne(collection *mongo.Collection, projection bson.D, filter bson.D) *mo
 	return collection.FindOne(ctx, filter, findOptions)
 }
 
+func FindMany(collection *mongo.Collection, options *options.FindOptions, filter bson.D) (*mongo.Cursor, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return collection.Find(ctx, filter, options)
+}
+
 func Count(collection *mongo.Collection, filter bson.D) (int64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
