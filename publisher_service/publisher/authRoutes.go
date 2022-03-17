@@ -14,10 +14,12 @@ func authRoutes(server *http.Server, mongo *bezmongo.MongoService) {
 		switch r.Method {
 		case "POST":
 			go handleAuth(r.Body, mongo, session, responseChan)
-			response := <-responseChan
-			session.Save(r, rw)
-			rw.Write(response)
+
 		}
+
+		response := <-responseChan
+		session.Save(r, rw)
+		rw.Write(response)
 
 	})
 }

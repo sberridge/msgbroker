@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"sync"
 	"time"
 
@@ -62,6 +63,12 @@ var store = sessions.NewCookieStore([]byte("rwerwerwer"))
 func getSession(r *http.Request) *sessions.Session {
 	session, _ := store.Get(r, "session")
 	return session
+}
+
+func validGuid(guid string) bool {
+	validRegex := regexp.MustCompile("^[0-9a-z]{8}-(?:[0-9a-z]{4}-){3}[0-9a-z]{12}$")
+	valid := validRegex.FindStringSubmatch(guid)
+	return valid != nil
 }
 
 func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server {

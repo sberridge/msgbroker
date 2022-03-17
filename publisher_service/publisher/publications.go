@@ -133,3 +133,7 @@ func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.Mong
 	responseChannel <- response
 
 }
+
+func handleDeletePublication(pubId string, ownerId string, mongo *bezmongo.MongoService, responseChannel chan []byte) {
+	responseChannel <- createMessageResponse(false, "hi")
+}
