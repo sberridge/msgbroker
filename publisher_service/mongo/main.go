@@ -63,3 +63,9 @@ func InsertOne(collection *mongo.Collection, row bson.D) (*mongo.InsertOneResult
 	defer cancel()
 	return collection.InsertOne(ctx, row)
 }
+
+func DeleteMany(collection *mongo.Collection, filter bson.D) (*mongo.DeleteResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return collection.DeleteMany(ctx, filter)
+}

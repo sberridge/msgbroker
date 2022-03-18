@@ -135,5 +135,30 @@ func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.Mong
 }
 
 func handleDeletePublication(pubId string, ownerId string, mongo *bezmongo.MongoService, responseChannel chan []byte) {
-	responseChannel <- createMessageResponse(false, "hi")
+	deletePublisherFailedMessage := "delete publication failed"
+	filter := bson.D{{Key: "_id", Value: pubId}, {Key: "owner_id", Value: ownerId}}
+	collection := mongo.OpenCollection("message-broker", "publishers")
+	count, err := bezmongo.Count(collection, filter)
+	if err != nil {
+		responseChannel <- createMessageResponse(false, deletePublisherFailedMessage)
+		return
+	}
+
+	if count == 0 {
+		responseChannel <- createMessageResponse(false, "publication not found")
+		return
+	}
+
+	result, err := bezmongo.DeleteMany(collection, filter)
+
+	if err != nil || result.DeletedCount == 0 {
+		responseChannel <- createMessageResponse(false, deletePublisherFailedMessage)
+		return
+	}
+
+	filter = bson.D{{Key: "publisher_id", Value: pubId}}
+	collection = mongo.OpenCollection("message-broker", "publisher_messages")
+	bezmongo.DeleteMany(collection, filter)
+
+	responseChannel <- createMessageResponse(true, "publication deleted")
 }
