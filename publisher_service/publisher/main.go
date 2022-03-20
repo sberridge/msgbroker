@@ -150,6 +150,8 @@ func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server 
 
 	routes = append(routes, publicationRoutes()...)
 
+	routes = append(routes, messageRoutes()...)
+
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
 
 		route, found := matchRoute(r.URL.Path, r.Method)

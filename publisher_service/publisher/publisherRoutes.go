@@ -3,7 +3,7 @@ package main
 func publicationRoutes() []route {
 	return []route{
 		{
-			RoutePattern: "/publications",
+			RoutePattern: "/publishers",
 			Method:       "GET",
 			Authenticate: true,
 			Func: func(rd routeData, c chan []byte) {
@@ -11,19 +11,19 @@ func publicationRoutes() []route {
 			},
 		},
 		{
-			RoutePattern: "/publications",
+			RoutePattern: "/publishers",
 			Method:       "POST",
 			Authenticate: true,
 			Func: func(rd routeData, c chan []byte) {
-				c <- handleCreatePublication(rd.Request.Body, rd.AuthID, rd.MongoService)
+				c <- handleCreatePublisher(rd.Request.Body, rd.AuthID, rd.MongoService)
 			},
 		},
 		{
-			RoutePattern: "/publications/{publication_id}",
+			RoutePattern: "/publishers/{publisher_id}",
 			Method:       "DELETE",
 			Authenticate: true,
 			Func: func(rd routeData, c chan []byte) {
-				c <- handleDeletePublication(rd.DynamicParams["publication_id"], rd.AuthID, rd.MongoService)
+				c <- handleDeletePublisher(rd.DynamicParams["publisher_id"], rd.AuthID, rd.MongoService)
 			},
 		},
 	}

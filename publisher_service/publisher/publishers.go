@@ -60,7 +60,7 @@ type createPublisherRequest struct {
 	Name string `json:"name"`
 }
 
-func checkPublicationExists(collection *mongo.Collection, name string, id string) bool {
+func checkPublisherExists(collection *mongo.Collection, name string, id string) bool {
 	filter := bson.D{{Key: "owner_id", Value: id}, {Key: "name", Value: name}}
 	count, err := bezmongo.Count(collection, filter)
 	if err != nil {
@@ -88,8 +88,8 @@ type createPublisherResponse struct {
 	Name string `json:"name"`
 }
 
-func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.MongoService) []byte {
-	publisherFailedMessage := "create publication failed"
+func handleCreatePublisher(body io.ReadCloser, id string, mongo *bezmongo.MongoService) []byte {
+	publisherFailedMessage := "create publisher failed"
 	bytes, err := readBody(body)
 	if err != nil {
 		return createMessageResponse(false, publisherFailedMessage)
@@ -103,8 +103,8 @@ func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.Mong
 
 	collection := mongo.OpenCollection(messageBrokerDb, publisherCollection)
 
-	if checkPublicationExists(collection, publisherRequest.Name, id) {
-		return createMessageResponse(false, "publication already exists")
+	if checkPublisherExists(collection, publisherRequest.Name, id) {
+		return createMessageResponse(false, "publisher already exists")
 	}
 
 	publisherId, err := registerPublisher(collection, publisherRequest.Name, id)
@@ -129,7 +129,7 @@ func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.Mong
 
 }
 
-func checkOwnsPublication(pubId string, ownerId string, mongo *bezmongo.MongoService) (bool, error) {
+func checkOwnsPublisher(pubId string, ownerId string, mongo *bezmongo.MongoService) (bool, error) {
 	filter := bson.D{{Key: "_id", Value: pubId}, {Key: "owner_id", Value: ownerId}}
 	collection := mongo.OpenCollection(messageBrokerDb, publisherCollection)
 	count, err := bezmongo.Count(collection, filter)
@@ -139,7 +139,7 @@ func checkOwnsPublication(pubId string, ownerId string, mongo *bezmongo.MongoSer
 	return count > 0, nil
 }
 
-func deletePublication(pubId string, mongo *bezmongo.MongoService) (bool, error) {
+func deletePublisher(pubId string, mongo *bezmongo.MongoService) (bool, error) {
 	filter := bson.D{{Key: "_id", Value: pubId}}
 	collection := mongo.OpenCollection(messageBrokerDb, publisherCollection)
 	result, err := bezmongo.DeleteMany(collection, filter)
@@ -149,7 +149,7 @@ func deletePublication(pubId string, mongo *bezmongo.MongoService) (bool, error)
 	return result.DeletedCount > 0, nil
 }
 
-func deleteAllPublicationMessages(pubId string, mongo *bezmongo.MongoService) (int64, error) {
+func deleteAllPublisherMessages(pubId string, mongo *bezmongo.MongoService) (int64, error) {
 	filter := bson.D{{Key: "publisher_id", Value: pubId}}
 	collection := mongo.OpenCollection(messageBrokerDb, "publisher_messages")
 	result, err := bezmongo.DeleteMany(collection, filter)
@@ -170,26 +170,26 @@ func deleteExistingSubscriptions(pubId string, mongo *bezmongo.MongoService) (in
 	return result.ModifiedCount, nil
 }
 
-func handleDeletePublication(pubId string, ownerId string, mongo *bezmongo.MongoService) []byte {
-	deletePublisherFailedMessage := "delete publication failed"
-	owned, err := checkOwnsPublication(pubId, ownerId, mongo)
+func handleDeletePublisher(pubId string, ownerId string, mongo *bezmongo.MongoService) []byte {
+	deletePublisherFailedMessage := "delete publisher failed"
+	owned, err := checkOwnsPublisher(pubId, ownerId, mongo)
 	if err != nil {
 		return createMessageResponse(false, deletePublisherFailedMessage)
 	}
 
 	if !owned {
-		return createMessageResponse(false, "publication not found")
+		return createMessageResponse(false, "publisher not found")
 	}
 
-	deletedPublication, err := deletePublication(pubId, mongo)
+	deletedPublisher, err := deletePublisher(pubId, mongo)
 
-	if err != nil || !deletedPublication {
+	if err != nil || !deletedPublisher {
 		return createMessageResponse(false, deletePublisherFailedMessage)
 	}
 
-	go deleteAllPublicationMessages(pubId, mongo)
+	go deleteAllPublisherMessages(pubId, mongo)
 
 	go deleteExistingSubscriptions(pubId, mongo)
 
-	return createMessageResponse(true, "publication deleted")
+	return createMessageResponse(true, "publisher deleted")
 }
