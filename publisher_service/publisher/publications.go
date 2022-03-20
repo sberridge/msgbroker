@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/sberridge/bezmongo"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -26,14 +27,15 @@ type publishersResult struct {
 	Publishers []jsonPublisher `json:"publishers"`
 }
 
-func handleGetPublications(mongo *bezmongo.MongoService, id string, query url.Values, responseChannel chan []byte) {
-	collection := mongo.OpenCollection("message-broker", "publishers")
+const publisherCollection = "publishers"
+
+func handleGetPublications(mongo *bezmongo.MongoService, id string, query url.Values) []byte {
+	collection := mongo.OpenCollection(messageBrokerDb, publisherCollection)
 	filter := bson.D{{Key: "owner_id", Value: id}}
 	findProjection := bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: 1}}
 	results, err := bezmongo.FindMany(collection, options.Find().SetProjection(findProjection), filter)
 	if err != nil {
-		responseChannel <- createMessageResponse(false, "failed fetching publications")
-		return
+		return createMessageResponse(false, "failed fetching publications")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -49,18 +51,16 @@ func handleGetPublications(mongo *bezmongo.MongoService, id string, query url.Va
 		Publishers: jResults,
 	})
 	if err != nil {
-		responseChannel <- createMessageResponse(false, "failed fetching publications")
-		return
+		return createMessageResponse(false, "failed fetching publications")
 	}
-	responseChannel <- result
+	return result
 }
 
 type createPublisherRequest struct {
 	Name string `json:"name"`
 }
 
-func checkPublicationExists(name string, id string, mongo *bezmongo.MongoService) bool {
-	collection := mongo.OpenCollection("message-broker", "publishers")
+func checkPublicationExists(collection *mongo.Collection, name string, id string) bool {
 	filter := bson.D{{Key: "owner_id", Value: id}, {Key: "name", Value: name}}
 	count, err := bezmongo.Count(collection, filter)
 	if err != nil {
@@ -69,11 +69,9 @@ func checkPublicationExists(name string, id string, mongo *bezmongo.MongoService
 	return count > 0
 }
 
-func registerPublisher(name string, id string, mongo *bezmongo.MongoService) (string, error) {
-	col := mongo.OpenCollection("message-broker", "publishers")
-
+func registerPublisher(collection *mongo.Collection, name string, id string) (string, error) {
 	newId := uuid.New().String()
-	_, err := bezmongo.InsertOne(col, bson.D{{Key: "_id", Value: newId}, {Key: "name", Value: name}, {Key: "owner_id", Value: id}})
+	_, err := bezmongo.InsertOne(collection, bson.D{{Key: "_id", Value: newId}, {Key: "name", Value: name}, {Key: "owner_id", Value: id}})
 
 	if err != nil {
 		return "", err
@@ -90,31 +88,29 @@ type createPublisherResponse struct {
 	Name string `json:"name"`
 }
 
-func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.MongoService, responseChannel chan []byte) {
+func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.MongoService) []byte {
 	publisherFailedMessage := "create publication failed"
 	bytes, err := readBody(body)
 	if err != nil {
-		responseChannel <- createMessageResponse(false, publisherFailedMessage)
-		return
+		return createMessageResponse(false, publisherFailedMessage)
 	}
 
 	publisherRequest := createPublisherRequest{}
 	err = json.Unmarshal(bytes, &publisherRequest)
 	if err != nil {
-		responseChannel <- createMessageResponse(false, publisherFailedMessage)
-		return
+		return createMessageResponse(false, publisherFailedMessage)
 	}
 
-	if checkPublicationExists(publisherRequest.Name, id, mongo) {
-		responseChannel <- createMessageResponse(false, "publication already exists")
-		return
+	collection := mongo.OpenCollection(messageBrokerDb, publisherCollection)
+
+	if checkPublicationExists(collection, publisherRequest.Name, id) {
+		return createMessageResponse(false, "publication already exists")
 	}
 
-	publisherId, err := registerPublisher(publisherRequest.Name, id, mongo)
+	publisherId, err := registerPublisher(collection, publisherRequest.Name, id)
 
 	if err != nil {
-		responseChannel <- createMessageResponse(false, publisherFailedMessage)
-		return
+		return createMessageResponse(false, publisherFailedMessage)
 	}
 
 	response, err := json.Marshal(createPublisherSuccessResponse{
@@ -126,39 +122,74 @@ func handleCreatePublication(body io.ReadCloser, id string, mongo *bezmongo.Mong
 	})
 
 	if err != nil {
-		responseChannel <- createMessageResponse(false, publisherFailedMessage)
-		return
+		return createMessageResponse(false, publisherFailedMessage)
 	}
 
-	responseChannel <- response
+	return response
 
 }
 
-func handleDeletePublication(pubId string, ownerId string, mongo *bezmongo.MongoService, responseChannel chan []byte) {
-	deletePublisherFailedMessage := "delete publication failed"
+func checkOwnsPublication(pubId string, ownerId string, mongo *bezmongo.MongoService) (bool, error) {
 	filter := bson.D{{Key: "_id", Value: pubId}, {Key: "owner_id", Value: ownerId}}
-	collection := mongo.OpenCollection("message-broker", "publishers")
+	collection := mongo.OpenCollection(messageBrokerDb, publisherCollection)
 	count, err := bezmongo.Count(collection, filter)
 	if err != nil {
-		responseChannel <- createMessageResponse(false, deletePublisherFailedMessage)
-		return
+		return false, err
 	}
+	return count > 0, nil
+}
 
-	if count == 0 {
-		responseChannel <- createMessageResponse(false, "publication not found")
-		return
-	}
-
+func deletePublication(pubId string, mongo *bezmongo.MongoService) (bool, error) {
+	filter := bson.D{{Key: "_id", Value: pubId}}
+	collection := mongo.OpenCollection(messageBrokerDb, publisherCollection)
 	result, err := bezmongo.DeleteMany(collection, filter)
+	if err != nil {
+		return false, err
+	}
+	return result.DeletedCount > 0, nil
+}
 
-	if err != nil || result.DeletedCount == 0 {
-		responseChannel <- createMessageResponse(false, deletePublisherFailedMessage)
-		return
+func deleteAllPublicationMessages(pubId string, mongo *bezmongo.MongoService) (int64, error) {
+	filter := bson.D{{Key: "publisher_id", Value: pubId}}
+	collection := mongo.OpenCollection(messageBrokerDb, "publisher_messages")
+	result, err := bezmongo.DeleteMany(collection, filter)
+	if err != nil {
+		return 0, err
+	}
+	return result.DeletedCount, nil
+}
+
+func deleteExistingSubscriptions(pubId string, mongo *bezmongo.MongoService) (int64, error) {
+	filter := bson.D{{Key: "subscriptions", Value: bson.D{{Key: "$elemMatch", Value: bson.D{{Key: "publisher_id", Value: pubId}}}}}}
+	update := bson.D{{Key: "$pull", Value: bson.D{{Key: "subscriptions", Value: bson.D{{Key: "publisher_id", Value: pubId}}}}}}
+	collection := mongo.OpenCollection(messageBrokerDb, "publisher_messages")
+	result, err := bezmongo.UpdateMany(collection, filter, update)
+	if err != nil {
+		return 0, err
+	}
+	return result.ModifiedCount, nil
+}
+
+func handleDeletePublication(pubId string, ownerId string, mongo *bezmongo.MongoService) []byte {
+	deletePublisherFailedMessage := "delete publication failed"
+	owned, err := checkOwnsPublication(pubId, ownerId, mongo)
+	if err != nil {
+		return createMessageResponse(false, deletePublisherFailedMessage)
 	}
 
-	filter = bson.D{{Key: "publisher_id", Value: pubId}}
-	collection = mongo.OpenCollection("message-broker", "publisher_messages")
-	bezmongo.DeleteMany(collection, filter)
+	if !owned {
+		return createMessageResponse(false, "publication not found")
+	}
 
-	responseChannel <- createMessageResponse(true, "publication deleted")
+	deletedPublication, err := deletePublication(pubId, mongo)
+
+	if err != nil || !deletedPublication {
+		return createMessageResponse(false, deletePublisherFailedMessage)
+	}
+
+	go deleteAllPublicationMessages(pubId, mongo)
+
+	go deleteExistingSubscriptions(pubId, mongo)
+
+	return createMessageResponse(true, "publication deleted")
 }

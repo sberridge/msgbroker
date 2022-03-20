@@ -69,3 +69,9 @@ func DeleteMany(collection *mongo.Collection, filter bson.D) (*mongo.DeleteResul
 	defer cancel()
 	return collection.DeleteMany(ctx, filter)
 }
+
+func UpdateMany(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return collection.UpdateMany(ctx, filter, update)
+}

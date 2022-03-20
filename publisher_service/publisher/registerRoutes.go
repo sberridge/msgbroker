@@ -1,13 +1,17 @@
 package main
 
-import (
-	"net/http"
-
-	"github.com/sberridge/bezmongo"
-)
-
-func registerRoutes(server *http.Server, mongo *bezmongo.MongoService) {
-	http.HandleFunc("/register", func(rw http.ResponseWriter, r *http.Request) {
+func registerRoutes() []route {
+	return []route{
+		{
+			RoutePattern: "/register",
+			Method:       "POST",
+			Authenticate: false,
+			Func: func(rd routeData, c chan []byte) {
+				c <- handleRegistration(rd.Request.Body, rd.MongoService, rd.Session)
+			},
+		},
+	}
+	/* http.HandleFunc("/register", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Add("content-type", "application/json")
 
 		session := getSession(r)
@@ -22,5 +26,5 @@ func registerRoutes(server *http.Server, mongo *bezmongo.MongoService) {
 		response := <-responseChan
 		session.Save(r, rw)
 		rw.Write(response)
-	})
+	}) */
 }

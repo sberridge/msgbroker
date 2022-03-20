@@ -19,14 +19,16 @@ type bsonClient struct {
 	Name string `bson:"name"`
 }
 
-func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sessions.Session, responseChannel chan []byte) {
+const clientsCollection = "clients"
+
+func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sessions.Session) []byte {
 
 	bytes, err := readBody(body)
 	failedAuthMessage := "Authentication failed"
 	if err != nil {
 		fmt.Println(err)
-		responseChannel <- createMessageResponse(false, failedAuthMessage)
-		return
+		return createMessageResponse(false, failedAuthMessage)
+
 	}
 
 	requestBody := authRequest{}
@@ -34,11 +36,10 @@ func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sess
 	err = json.Unmarshal(bytes, &requestBody)
 	if err != nil {
 		fmt.Println(err)
-		responseChannel <- createMessageResponse(false, failedAuthMessage)
-		return
+		return createMessageResponse(false, failedAuthMessage)
 	}
 
-	col := bmongo.OpenCollection("message-broker", "clients")
+	col := bmongo.OpenCollection(messageBrokerDb, clientsCollection)
 	id := requestBody.UniqueId
 
 	filter := bson.D{{Key: "_id", Value: id}}
@@ -47,9 +48,8 @@ func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sess
 	clientStruct := bsonClient{}
 	err = result.Decode(&clientStruct)
 	if err != nil {
-		responseChannel <- createMessageResponse(false, failedAuthMessage)
-		return
+		return createMessageResponse(false, failedAuthMessage)
 	}
 	session.Values["auth_id"] = clientStruct.Id
-	responseChannel <- createMessageResponse(true, fmt.Sprintf("Authenticated as %s", clientStruct.Name))
+	return createMessageResponse(true, fmt.Sprintf("Authenticated as %s", clientStruct.Name))
 }
