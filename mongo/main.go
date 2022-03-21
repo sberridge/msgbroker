@@ -75,3 +75,9 @@ func UpdateMany(collection *mongo.Collection, filter bson.D, update bson.D) (*mo
 	defer cancel()
 	return collection.UpdateMany(ctx, filter, update)
 }
+
+func UpdateOne(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	return collection.UpdateOne(ctx, filter, update)
+}

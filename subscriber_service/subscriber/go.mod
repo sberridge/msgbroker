@@ -1,4 +1,4 @@
-module bezberr.com/messagebrokerpublisherservice
+module github.com/sberridge/msgbrokersubscription
 
 go 1.17
 
