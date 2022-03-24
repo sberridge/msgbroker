@@ -20,7 +20,8 @@ func (mongoManager *mongoManager) openCollection(database string, collection str
 func startMongo() (*mongoManager, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://message_broker_db:27017"))
+	//client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://message_broker_db:27017"))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI("mongodb://localhost:27017"))
 	if err != nil {
 		return nil, err
 	}
@@ -28,12 +29,6 @@ func startMongo() (*mongoManager, error) {
 		connection: client,
 	}
 	return &manager, nil
-}
-
-func mongoCount(collection *mongo.Collection, filter bson.D) (int64, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	return collection.CountDocuments(ctx, filter)
 }
 
 func mongoFindOne(collection *mongo.Collection, projection bson.D, filter bson.D) *mongo.SingleResult {
@@ -47,19 +42,6 @@ func mongoFindMany(collection *mongo.Collection, findOptions *options.FindOption
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	return collection.Find(ctx, filter, findOptions)
-}
-
-func mongoInsertOne(collection *mongo.Collection, row bson.D) (*mongo.InsertOneResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	return collection.InsertOne(ctx, row)
-}
-
-func mongoUpdateOne(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	updateResult, err := collection.UpdateOne(ctx, filter, update)
-	return updateResult, err
 }
 
 func mongoUpdateMany(collection *mongo.Collection, filter bson.D, update bson.D) (*mongo.UpdateResult, error) {

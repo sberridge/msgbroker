@@ -2,11 +2,9 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -113,51 +111,5 @@ func (sub *subscription) loop(mongoManager *mongoManager) {
 
 		<-time.After(time.Second * 2)
 	}
-
-}
-
-func subscribe(owner *clientConnection, mongoManager *mongoManager, publisherID string) (*subscription, error) {
-
-	publisherCol := mongoManager.connection.Database("message-broker").Collection("publishers")
-	publisherFilter := bson.D{{Key: "_id", Value: publisherID}}
-	result, _ := mongoCount(publisherCol, publisherFilter)
-	if result == 0 {
-		return nil, errors.New("publisher not found")
-	}
-
-	col := mongoManager.connection.Database("message-broker").Collection("clients")
-	filter := bson.D{{Key: "_id", Value: owner.id},
-		{Key: "subscriptions.publisher_id", Value: publisherID},
-	}
-	result, _ = mongoCount(col, filter)
-
-	if result > 0 {
-		return nil, errors.New("already subscribed")
-	}
-
-	filter = bson.D{{Key: "_id", Value: owner.id}}
-	id := uuid.New().String()
-	update := bson.D{{Key: "$push", Value: bson.D{
-		{Key: "subscriptions", Value: bson.D{
-			{Key: "_id", Value: id},
-			{Key: "publisher_id", Value: publisherID},
-		}},
-	}}}
-
-	_, err := mongoUpdateOne(col, filter, update)
-
-	if err != nil {
-		return nil, err
-	}
-
-	sub := subscription{
-		id:                      id,
-		publisherID:             publisherID,
-		clientID:                owner.id,
-		cancelChannel:           make(chan bool),
-		receiveConfirmedChannel: make(chan *subscriptionMessagesConfirmation),
-		messagesChannel:         make(chan []jsonMessageItem),
-	}
-	return &sub, nil
 
 }

@@ -35,35 +35,6 @@ type sendRequest struct {
 	errorSuccess errorSuccess
 }
 
-type newPublisherRequestData struct {
-	Name string `json:"name"` //name of a new publisher
-}
-type newPublisherRequest struct {
-	Action  string                  `json:"action"`
-	Message string                  `json:"message"`
-	Data    newPublisherRequestData `json:"data"`
-}
-
-type publishMessageRequestData struct {
-	PublisherID string `json:"publisher_id"` //publisher of the new message
-	Ttl         int64  `json:"ttl"`          //time to live in seconds
-	Payload     string `json:"payload"`      //payload of the message
-}
-type publishMessageRequest struct {
-	Action  string                    `json:"action"`
-	Message string                    `json:"message"`
-	Data    publishMessageRequestData `json:"data"`
-}
-
-type subscribeRequestData struct {
-	PublisherID string `json:"publisher_id"` //id of the publisher being subscribed to
-}
-type subscribeRequest struct {
-	Action  string               `json:"action"`
-	Message string               `json:"message"`
-	Data    subscribeRequestData `json:"data"`
-}
-
 type confirmMessageData struct {
 	Id             string `json:"id"`              //id of the message being confirmed
 	SubscriptionID string `json:"subscription_id"` //id of the subscription the message was received on
@@ -77,92 +48,6 @@ type confirmRequest struct {
 	Data    confirmRequestData `json:"data"`
 }
 
-func handleRegisterPublisher(client *clientConnection, mongoManager *mongoManager, message string) {
-	newPublisherRequest := newPublisherRequest{}
-	err := json.Unmarshal([]byte(message), &newPublisherRequest)
-	if err != nil {
-		client.send(jsonCommunication{
-			Action:  "failed_registering_publisher",
-			Message: "Invalid json format",
-		}, errorSuccess{})
-		return
-	}
-	publisher, err := newPublisher(client, newPublisherRequest.Data, mongoManager)
-	if err != nil {
-		client.send(jsonCommunication{
-			Action:  "failed_registering_publisher",
-			Message: err.Error(),
-		}, errorSuccess{})
-	} else {
-		client.send(jsonCommunication{
-			Action: "publisher_registered",
-			Data:   publisher,
-		}, errorSuccess{})
-	}
-}
-func handleGetPublishers(client *clientConnection, mongoManager *mongoManager) {
-	publishers, err := getPublishers(client, mongoManager)
-	if err != nil {
-		client.send(jsonCommunication{
-			Action:  "failed_fetching_publishers",
-			Message: err.Error(),
-		}, errorSuccess{})
-		return
-	}
-	client.send(jsonCommunication{
-		Action: "your_publishers",
-		Data:   publishers,
-	}, errorSuccess{})
-}
-func handlePublishMessage(message string, client *clientConnection, mongoManager *mongoManager) {
-	publishMessageRequest := publishMessageRequest{}
-	err := json.Unmarshal([]byte(message), &publishMessageRequest)
-	if err != nil {
-		client.send(jsonCommunication{
-			Action:  "failed_publishing_message",
-			Message: "Invalid json format",
-		}, errorSuccess{})
-		return
-	}
-	publishedMessage, err := publishMessage(client, publishMessageRequest.Data, mongoManager)
-	if publishedMessage {
-
-		client.send(jsonCommunication{
-			Action:  "message_published",
-			Message: "Message published",
-		}, errorSuccess{})
-		fmt.Println("done")
-	} else {
-		client.send(jsonCommunication{
-			Action:  "failed_publishing_message",
-			Message: err.Error(),
-		}, errorSuccess{})
-	}
-}
-func handleSubscribe(message string, client *clientConnection, mongoManager *mongoManager) {
-	subscribeRequest := subscribeRequest{}
-	err := json.Unmarshal([]byte(message), &subscribeRequest)
-	if err != nil {
-		client.send(jsonCommunication{
-			Action:  "failed_subscribing",
-			Message: "Invalid json format",
-		}, errorSuccess{})
-		return
-	}
-	subscription, err := subscribe(client, mongoManager, subscribeRequest.Data.PublisherID)
-	if err != nil {
-		client.send(jsonCommunication{
-			Action:  "failed_subscribing",
-			Message: err.Error(),
-		}, errorSuccess{})
-	} else {
-		client.send(jsonCommunication{
-			Action:  "subscribed",
-			Message: "Subscribed",
-		}, errorSuccess{})
-		client.subscriptionManager.newSubscriptionChannel <- subscription
-	}
-}
 func handleConfirmMessage(message string, client *clientConnection) {
 	confirmRequest := confirmRequest{}
 	err := json.Unmarshal([]byte(message), &confirmRequest)
@@ -197,14 +82,6 @@ func handleClientMessage(message string, client *clientConnection, mongoManager 
 		return
 	}
 	switch jsonMsg.Action {
-	case "register_publisher": //registering a new publisher
-		handleRegisterPublisher(client, mongoManager, message)
-	case "get_publishers": //request to receive the publishers owned by the client
-		handleGetPublishers(client, mongoManager)
-	case "publish_message": //request to publish a new message
-		handlePublishMessage(message, client, mongoManager)
-	case "subscribe": //request to subscribe to a publisher to start receiving messages
-		handleSubscribe(message, client, mongoManager)
 	case "confirm_messages": //request to confirm that the client received a set of messages from a subscription
 		handleConfirmMessage(message, client)
 	}

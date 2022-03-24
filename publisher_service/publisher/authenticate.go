@@ -21,6 +21,14 @@ type bsonClient struct {
 
 const clientsCollection = "clients"
 
+type authResponseData struct {
+	Id string `json:"id"`
+}
+type authResponse struct {
+	Success bool             `json:"success"`
+	Data    authResponseData `json:"data"`
+}
+
 func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sessions.Session) []byte {
 
 	bytes, err := readBody(body)
@@ -51,5 +59,39 @@ func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sess
 		return createMessageResponse(false, failedAuthMessage)
 	}
 	session.Values["auth_id"] = clientStruct.Id
-	return createMessageResponse(true, fmt.Sprintf("Authenticated as %s", clientStruct.Name))
+	response, err := json.Marshal(authResponse{
+		Success: true,
+		Data: authResponseData{
+			Id: clientStruct.Id,
+		},
+	})
+	if err != nil {
+		return createMessageResponse(false, failedAuthMessage)
+	}
+	return response
+}
+
+type checkAuthResponseData struct {
+	Id string `json:"id"`
+}
+type checkAuthResponse struct {
+	Success bool                  `json:"success"`
+	Data    checkAuthResponseData `json:"data"`
+}
+
+func handleCheckAuth(ses *sessions.Session) []byte {
+	id, authed := checkAuth(ses)
+	if authed {
+		response, err := json.Marshal(checkAuthResponse{
+			Success: true,
+			Data: checkAuthResponseData{
+				Id: id,
+			},
+		})
+		if err != nil {
+			return createMessageResponse(false, "failed checking auth")
+		}
+		return response
+	}
+	return createMessageResponse(false, "not authed")
 }

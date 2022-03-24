@@ -103,7 +103,7 @@ func (route *route) GetDynamicParams(url string) map[string]string {
 }
 
 func (route *route) Match(url string, method string) bool {
-	if route.Method != method {
+	if route.Method != method && method != "OPTIONS" {
 		return false
 	}
 	urlParts := separateRoute(url)
@@ -142,7 +142,7 @@ func matchRoute(url string, method string) (route, bool) {
 
 func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server {
 
-	server := &http.Server{Addr: ":8080"}
+	server := &http.Server{Addr: ":8081"}
 
 	routes = append(routes, authRoutes()...)
 
@@ -152,8 +152,12 @@ func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server 
 
 	routes = append(routes, messageRoutes()...)
 
-	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+	routes = append(routes, subscriberRoutes()...)
 
+	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("Access-Control-Allow-Origin", "http://localhost:4000")
+		rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		rw.Header().Set("Access-Control-Allow-Credentials", "true")
 		route, found := matchRoute(r.URL.Path, r.Method)
 
 		if !found {
@@ -161,6 +165,12 @@ func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server 
 			return
 		}
 
+		if r.Method == "OPTIONS" {
+			rw.Write(createMessageResponse(true, ""))
+			return
+		}
+		h := rw.Header()
+		h.Add("Content-Type", "application/json")
 		session := getSession(r)
 
 		rd := routeData{
