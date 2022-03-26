@@ -3,7 +3,7 @@ import ReactDOM from "react-dom";
 import Header from "./header";
 import LoginForm from "./auth/loginForm";
 import APIRequest from "./modules/APIRequest";
-import ProviderManager from "./provider/providerManager";
+import PublisherManager from "./publisher/publisherManager";
 
 const App = () =>{
 
@@ -13,8 +13,6 @@ const App = () =>{
     let [isLoading, setIsLoading] = React.useState(true);
 
     const [lock, setLock] = React.useState(true);
-
-    console.log(isAuthed);
     
     const checkAuth = async () =>{  
         const authRes = await (new APIRequest)
@@ -40,7 +38,6 @@ const App = () =>{
 
     
     const onLoggedIn = (id:string) => {
-        console.log(id);
         setAuthId(id);
         setIsAuthed(true);
     }
@@ -59,9 +56,9 @@ const App = () =>{
         {isAuthed &&
             <div>
                 <p>Authenticated as: {authId}</p>
-                <ProviderManager
+                <PublisherManager
                     authId={authId}
-                ></ProviderManager>
+                ></PublisherManager>
             </div>
         }
     </div>
