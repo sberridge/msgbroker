@@ -24,9 +24,7 @@ const LoginForm = (props:loginFormProps) => {
 
     const handleLoginSubmit = (event:React.FormEvent) => {
         event.preventDefault();
-        let success = false;
         attemptLogin().then((res)=>{
-            console.log(res);
             if(res.success) {
                 props.onLoggedIn(res.data.id)
             }

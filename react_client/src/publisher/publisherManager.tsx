@@ -27,12 +27,16 @@ const PublisherManager = (props:publisherManagerProps) => {
         loadPublishers();
     },[]);
 
-    
+    const onPublisherCreated = () => {
+        loadPublishers();
+    }
 
     return <div>
         <h2>Publisher Management</h2>
         <h3>New Publisher</h3>
-        <NewPublisherForm></NewPublisherForm>
+        <NewPublisherForm
+            onPublisherCreated={onPublisherCreated}
+        ></NewPublisherForm>
         <h3>Your Publishers</h3>
         <PublisherList
             publishers={publishers}
