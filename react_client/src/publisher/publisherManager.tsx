@@ -20,7 +20,6 @@ const PublisherManager = (props:publisherManagerProps) => {
         if(result.success) {
             setPublishers(result.publishers);
         }
-        console.log(result);
     }
 
     useEffect(()=>{
@@ -31,19 +30,22 @@ const PublisherManager = (props:publisherManagerProps) => {
         loadPublishers();
     }
 
-    return <div>
-        <h2>Publisher Management</h2>
-        <h3>New Publisher</h3>
-        <NewPublisherForm
-            onPublisherCreated={onPublisherCreated}
-        ></NewPublisherForm>
-        <h3>Your Publishers</h3>
-        <PublisherList
-            publishers={publishers}
-        ></PublisherList>
+    return (
+        <section className="section">
+            <div className="container">
+                <h2 className="title is-3">Publisher Management</h2>
+                
+                <NewPublisherForm
+                    onPublisherCreated={onPublisherCreated}
+                ></NewPublisherForm>
+                
+                <PublisherList
+                    publishers={publishers}
+                ></PublisherList>
         
-        
-    </div>
+            </div>
+        </section>
+    )
 }
 
 export default PublisherManager;

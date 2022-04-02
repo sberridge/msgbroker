@@ -14,9 +14,19 @@ const PublisherList = (props:publisherListProps) => {
         })
     }
 
-    return <ul>
-        {renderPublisherList()}
-    </ul>
+    return (
+        <div className="section">
+            <div className="container">
+                <h3 className="title is-4">Your Publishers</h3>
+                <div className="content">
+                    <ul>
+                        {renderPublisherList()}
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+    )
 }
 
 export default PublisherList

@@ -1,3 +1,4 @@
+import "./css/app.scss";
 import React, { useEffect } from "react";
 import ReactDOM from "react-dom";
 import Header from "./header";
@@ -44,7 +45,10 @@ const App = () =>{
     
 
     return <div id="app-container">
-        <Header></Header>
+        <Header
+            isAuthed={isAuthed}
+            authID={authId}
+        ></Header>
         {isLoading &&
             <p>Please wait...</p>
         }
@@ -55,7 +59,12 @@ const App = () =>{
         }
         {isAuthed &&
             <div>
-                <p>Authenticated as: {authId}</p>
+                <div className="tabs">
+                    <ul>
+                        <li className="is-active"><a>Publishers</a></li>
+                        <li><a>Subscriptions</a></li>
+                    </ul>
+                </div>
                 <PublisherManager
                     authId={authId}
                 ></PublisherManager>

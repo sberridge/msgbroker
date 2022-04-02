@@ -33,13 +33,26 @@ const LoginForm = (props:loginFormProps) => {
         });
     }
 
-    return <form onSubmit={handleLoginSubmit}>
-        <label htmlFor="login_id_input">ID</label>
-        <input id="login_id_input" type="text" onChange={(e)=>{
-            setLoginId(e.target.value);
-        }}></input>
-        <button type="submit">Login</button>
-    </form>
+    return (
+        <section className="section">
+            <div className="container">
+                <h2 className="title is-3">Login</h2>
+                <form onSubmit={handleLoginSubmit}>
+                    <div className="field">
+                        <label className="label is-small" htmlFor="login_id_input">ID</label>
+                        <div className="control">
+                            <input className="input is-small" id="login_id_input" type="text" onChange={(e)=>{
+                                setLoginId(e.target.value);
+                            }}></input>
+                        </div>
+                    </div>
+                    <div className="control">
+                        <button className="button is-primary" type="submit">Login</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+    )
 }
 
 export default LoginForm
