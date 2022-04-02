@@ -12,6 +12,7 @@ type publisherManagerProps = {
 const PublisherManager = (props:publisherManagerProps) => {
 
     const [publishers, setPublishers] = useState<publisherDetails[]>([])
+    const [selectedPublisher, setSelectedPublisher] = useState<null|string>(null);
 
     const loadPublishers = async () =>{
         let request = new APIRequest();
@@ -30,18 +31,30 @@ const PublisherManager = (props:publisherManagerProps) => {
         loadPublishers();
     }
 
+    const onSelectPublisher = (id:string|null)=>{
+        setSelectedPublisher(id);
+    }
+
     return (
         <section className="section">
-            <div className="container">
-                <h2 className="title is-3">Publisher Management</h2>
+            <h2 className="title is-3">Publisher Management</h2>
+            <div className="columns">
+                <div className="column is-narrow">
+                    <PublisherList
+                        publishers={publishers}
+                        selectedPublisher={selectedPublisher}
+                        onSelectPublisher={onSelectPublisher}
+                    ></PublisherList>
+                </div>
+                <div className="column">
+                    <NewPublisherForm
+                        onPublisherCreated={onPublisherCreated}
+                    ></NewPublisherForm>
+                </div>
                 
-                <NewPublisherForm
-                    onPublisherCreated={onPublisherCreated}
-                ></NewPublisherForm>
                 
-                <PublisherList
-                    publishers={publishers}
-                ></PublisherList>
+                
+                
         
             </div>
         </section>
