@@ -7,6 +7,7 @@ import APIRequest from "./modules/APIRequest";
 import PublisherManager from "./publisher/publisherManager";
 import Menu from "./menu/menu";
 import { appPage, authedUser } from "./types/types";
+import MessageFeed from "./message-feed/messageFeed";
 
 
 const appPages:appPage[] = [
@@ -17,6 +18,10 @@ const appPages:appPage[] = [
     {
         title: "Subscriptions",
         key: "subscriptions"
+    },
+    {
+        title: "Message Feed",
+        key: "feed"
     }
 ];
 
@@ -110,6 +115,11 @@ const App = () =>{
                     <PublisherManager
                         authId={authedUser.id}
                     ></PublisherManager>
+                }
+                {currentPage == "feed" &&
+                    <MessageFeed
+                        authedUser={authedUser}
+                    ></MessageFeed>
                 }
                 
             </div>
