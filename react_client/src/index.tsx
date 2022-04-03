@@ -6,7 +6,7 @@ import LoginForm from "./auth/loginForm";
 import APIRequest from "./modules/APIRequest";
 import PublisherManager from "./publisher/publisherManager";
 import Menu from "./menu/menu";
-import { appPage } from "./types/types";
+import { appPage, authedUser } from "./types/types";
 
 
 const appPages:appPage[] = [
@@ -27,14 +27,12 @@ appPages.forEach((page)=>{
 
 const App = () =>{
 
-    let [authId, setAuthId] = React.useState("");
+    let [authedUser, setAuthedUser] = useState<authedUser|null>(null);
     let [isAuthed, setIsAuthed] = React.useState(false);
 
     let [isLoading, setIsLoading] = React.useState(true);
 
     const [currentPage,setCurrentPage] = useState("publishers");
-
-    const [lock, setLock] = React.useState(true);
     
     const checkAuth = async () =>{  
         const authRes = await (new APIRequest)
@@ -47,8 +45,12 @@ const App = () =>{
     useEffect(()=>{
         checkAuth().then((r)=>{
             if(r.success) {
+                console.log(r);
                 setIsAuthed(true);
-                setAuthId(r.data.id);
+                setAuthedUser({
+                    id: r.data.id,
+                    name: r.data.name
+                });
             } else {
                 setIsAuthed(false);
             }
@@ -56,16 +58,15 @@ const App = () =>{
         }).catch(err=>{
             console.log(err);
         });
-        window.onpopstate = (e)=>{
-            console.log(e);
+        window.onpopstate = ()=>{
             let url = window.location.search.replace("?","");
             changePage(url);
         }
-    }, [lock]);
+    }, []);
 
     
-    const onLoggedIn = (id:string) => {
-        setAuthId(id);
+    const onLoggedIn = (authedUser:authedUser) => {
+        setAuthedUser(authedUser);
         setIsAuthed(true);
     }
 
@@ -88,7 +89,7 @@ const App = () =>{
     return <div id="app-container">
         <Header
             isAuthed={isAuthed}
-            authID={authId}
+            authedUser={authedUser}
         ></Header>
         {isLoading &&
             <p>Please wait...</p>
@@ -98,7 +99,7 @@ const App = () =>{
                 onLoggedIn={onLoggedIn}
             ></LoginForm>
         }
-        {isAuthed &&
+        {authedUser &&
             <div>
                 <Menu
                     onPageChange={onPageChange}
@@ -107,7 +108,7 @@ const App = () =>{
                 ></Menu>
                 {currentPage == "publishers" &&
                     <PublisherManager
-                        authId={authId}
+                        authId={authedUser.id}
                     ></PublisherManager>
                 }
                 

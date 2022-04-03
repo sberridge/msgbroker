@@ -26,5 +26,13 @@ func publicationRoutes() []route {
 				c <- handleDeletePublisher(rd.DynamicParams["publisher_id"], rd.AuthID, rd.MongoService)
 			},
 		},
+		{
+			RoutePattern: "/publishers/{publisher_id}/subscribers",
+			Method:       "GET",
+			Authenticate: true,
+			Func: func(rd routeData, c chan []byte) {
+				c <- handleGetPublisherSubscribers(rd.DynamicParams["publisher_id"], rd.AuthID, rd.MongoService)
+			},
+		},
 	}
 }

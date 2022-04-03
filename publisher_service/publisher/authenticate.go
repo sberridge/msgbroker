@@ -22,7 +22,8 @@ type bsonClient struct {
 const clientsCollection = "clients"
 
 type authResponseData struct {
-	Id string `json:"id"`
+	Id   string `json:"id"`
+	Name string `json:"name"`
 }
 type authResponse struct {
 	Success bool             `json:"success"`
@@ -47,45 +48,61 @@ func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sess
 		return createMessageResponse(false, failedAuthMessage)
 	}
 
-	col := bmongo.OpenCollection(messageBrokerDb, clientsCollection)
 	id := requestBody.UniqueId
 
-	filter := bson.D{{Key: "_id", Value: id}}
-	findProjection := bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: 1}, {Key: "subscriptions", Value: 1}}
-	result := bezmongo.FindOne(col, findProjection, filter)
-	clientStruct := bsonClient{}
-	err = result.Decode(&clientStruct)
+	clientStruct, err := getClient(id, bmongo)
+
 	if err != nil {
 		return createMessageResponse(false, failedAuthMessage)
 	}
-	session.Values["auth_id"] = clientStruct.Id
 	response, err := json.Marshal(authResponse{
 		Success: true,
 		Data: authResponseData{
-			Id: clientStruct.Id,
+			Id:   clientStruct.Id,
+			Name: clientStruct.Name,
 		},
 	})
 	if err != nil {
 		return createMessageResponse(false, failedAuthMessage)
 	}
+	session.Values["auth_id"] = clientStruct.Id
 	return response
 }
 
 type checkAuthResponseData struct {
-	Id string `json:"id"`
+	Id   string `json:"id"`
+	Name string `json:"name"`
 }
 type checkAuthResponse struct {
 	Success bool                  `json:"success"`
 	Data    checkAuthResponseData `json:"data"`
 }
 
-func handleCheckAuth(ses *sessions.Session) []byte {
+func getClient(clientId string, mongo *bezmongo.MongoService) (bsonClient, error) {
+	col := mongo.OpenCollection(messageBrokerDb, clientsCollection)
+	filter := bson.D{{Key: "_id", Value: clientId}}
+	findProjection := bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: 1}}
+	result := bezmongo.FindOne(col, findProjection, filter)
+	clientStruct := bsonClient{}
+	err := result.Decode(&clientStruct)
+	if err != nil {
+		return bsonClient{}, err
+	}
+	return clientStruct, nil
+}
+
+func handleCheckAuth(ses *sessions.Session, mongo *bezmongo.MongoService) []byte {
 	id, authed := checkAuth(ses)
 	if authed {
+		client, err := getClient(id, mongo)
+		if err != nil {
+			return createMessageResponse(false, "failed checking auth")
+		}
 		response, err := json.Marshal(checkAuthResponse{
 			Success: true,
 			Data: checkAuthResponseData{
-				Id: id,
+				Id:   id,
+				Name: client.Name,
 			},
 		})
 		if err != nil {

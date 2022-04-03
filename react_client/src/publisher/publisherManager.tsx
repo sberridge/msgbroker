@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import APIRequest from "../modules/APIRequest";
 import { publisherDetails } from './../types/types'
 import NewPublisherForm from "./newPublisherForm";
+import Publisher from "./publisher";
 import PublisherList from './publisherList'
 
 type publisherManagerProps = {
@@ -12,7 +13,7 @@ type publisherManagerProps = {
 const PublisherManager = (props:publisherManagerProps) => {
 
     const [publishers, setPublishers] = useState<publisherDetails[]>([])
-    const [selectedPublisher, setSelectedPublisher] = useState<null|string>(null);
+    const [selectedPublisher, setSelectedPublisher] = useState<null|publisherDetails>(null);
 
     const loadPublishers = async () =>{
         let request = new APIRequest();
@@ -31,8 +32,8 @@ const PublisherManager = (props:publisherManagerProps) => {
         loadPublishers();
     }
 
-    const onSelectPublisher = (id:string|null)=>{
-        setSelectedPublisher(id);
+    const onSelectPublisher = (publisher:publisherDetails|null)=>{
+        setSelectedPublisher(publisher);
     }
 
     return (
@@ -47,9 +48,16 @@ const PublisherManager = (props:publisherManagerProps) => {
                     ></PublisherList>
                 </div>
                 <div className="column">
-                    <NewPublisherForm
-                        onPublisherCreated={onPublisherCreated}
-                    ></NewPublisherForm>
+                    {!selectedPublisher && 
+                        <NewPublisherForm
+                            onPublisherCreated={onPublisherCreated}
+                        ></NewPublisherForm>
+                    }
+                    {selectedPublisher &&
+                        <Publisher
+                            publisher={selectedPublisher}
+                        ></Publisher>
+                    }                 
                 </div>
                 
                 

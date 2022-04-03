@@ -2,14 +2,13 @@ import React, { useState } from "react";
 import { Validator } from "../lib/Validator";
 import APIRequest from "../modules/APIRequest";
 
+import { statusMessage } from "./../types/types"
+
 type newPublisherProps = {
     onPublisherCreated: ()=>void
 }
 
-type statusMessage = {
-    message: string
-    type: string
-}
+
 
 const NewPublisherForm = (props:newPublisherProps) => {
 
@@ -51,7 +50,6 @@ const NewPublisherForm = (props:newPublisherProps) => {
     }
 
     const createPublisher = async (data:{publisher_name:string}) => {
-        console.log('test');
         setIsLoading(true);
         const request = new APIRequest();
         const createResult = await request.setRoute("publishers")
@@ -64,7 +62,6 @@ const NewPublisherForm = (props:newPublisherProps) => {
                     type: "is-danger",
                     message: "Something went wrong creating the publisher, please try again"
                 })
-                console.log(e);
             });
         if(createResult) {
             if(createResult.success) {
@@ -82,7 +79,6 @@ const NewPublisherForm = (props:newPublisherProps) => {
             }
         }
         setIsLoading(false);
-        console.log(createResult);
     }
     
     const handleSubmit = async (e:React.FormEvent) => {

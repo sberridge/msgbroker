@@ -1,8 +1,9 @@
 import React from "react";
+import { authedUser } from "../types/types";
 import APIRequest from "./../modules/APIRequest";
 
 type loginFormProps = {
-    onLoggedIn: (id:string)=>void
+    onLoggedIn: (authedUser:authedUser)=>void
 }
 
 const LoginForm = (props:loginFormProps) => {
@@ -26,7 +27,7 @@ const LoginForm = (props:loginFormProps) => {
         event.preventDefault();
         attemptLogin().then((res)=>{
             if(res.success) {
-                props.onLoggedIn(res.data.id)
+                props.onLoggedIn(res.data)
             }
         }).catch(err=>{
             console.log(err);

@@ -15,7 +15,7 @@ func authRoutes() []route {
 			RoutePattern: "/auth",
 			Method:       "GET",
 			Func: func(data routeData, responseChan chan []byte) {
-				responseChan <- handleCheckAuth(data.Session)
+				responseChan <- handleCheckAuth(data.Session, data.MongoService)
 			},
 		},
 	}

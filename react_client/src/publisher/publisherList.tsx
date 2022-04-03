@@ -4,15 +4,15 @@ import { publisherDetails } from './../types/types'
 
 type publisherListProps = {
     publishers: publisherDetails[]
-    selectedPublisher: null | string
-    onSelectPublisher: (publisherId:string|null)=>void
+    selectedPublisher: null | publisherDetails
+    onSelectPublisher: (publisherId:publisherDetails|null)=>void
 }
 
 const PublisherList = (props:publisherListProps) => {
 
     const renderPublisherList = () => {
         return props.publishers.map((publisher)=>{
-            return <li key={publisher.id}><a className={props.selectedPublisher == publisher.id ? "is-active" : ""} onClick={()=>{props.onSelectPublisher(publisher.id)}}>{publisher.name}</a></li>
+            return <li key={publisher.id}><a className={props.selectedPublisher?.id == publisher.id ? "is-active" : ""} onClick={()=>{props.onSelectPublisher(publisher)}}>{publisher.name}</a></li>
         })
     }
 

@@ -162,7 +162,7 @@ func deleteAllPublisherMessages(pubId string, mongo *bezmongo.MongoService) (int
 func deleteExistingSubscriptions(pubId string, mongo *bezmongo.MongoService) (int64, error) {
 	filter := bson.D{{Key: "subscriptions", Value: bson.D{{Key: "$elemMatch", Value: bson.D{{Key: "publisher_id", Value: pubId}}}}}}
 	update := bson.D{{Key: "$pull", Value: bson.D{{Key: "subscriptions", Value: bson.D{{Key: "publisher_id", Value: pubId}}}}}}
-	collection := mongo.OpenCollection(messageBrokerDb, "publisher_messages")
+	collection := mongo.OpenCollection(messageBrokerDb, "clients")
 	result, err := bezmongo.UpdateMany(collection, filter, update)
 	if err != nil {
 		return 0, err
@@ -192,4 +192,48 @@ func handleDeletePublisher(pubId string, ownerId string, mongo *bezmongo.MongoSe
 	go deleteExistingSubscriptions(pubId, mongo)
 
 	return createMessageResponse(true, "publisher deleted")
+}
+
+type subscribersResult struct {
+	Success     bool            `json:"success"`
+	Subscribers []jsonPublisher `json:"subscribers"`
+}
+
+func getPublisherSubscribers(pubId string, mongo *bezmongo.MongoService) []byte {
+	filter := bson.D{{Key: "subscriptions", Value: bson.D{{Key: "$elemMatch", Value: bson.D{{Key: "publisher_id", Value: pubId}}}}}}
+	projection := bson.D{{Key: "_id", Value: 1}, {Key: "name", Value: 1}}
+	collection := mongo.OpenCollection(messageBrokerDb, "clients")
+	results, err := bezmongo.FindMany(collection, options.Find().SetProjection(projection), filter)
+	if err != nil {
+		return createMessageResponse(false, "failed finding subscribers")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	bResults := []bsonPublisher{}
+	jResults := []jsonPublisher{}
+	results.All(ctx, &bResults)
+	for _, p := range bResults {
+		jResults = append(jResults, jsonPublisher(p))
+	}
+	result, err := json.Marshal(subscribersResult{
+		Success:     true,
+		Subscribers: jResults,
+	})
+	if err != nil {
+		return createMessageResponse(false, "failed fetching publications")
+	}
+	return result
+}
+
+func handleGetPublisherSubscribers(pubId string, ownerId string, mongo *bezmongo.MongoService) []byte {
+	deletePublisherFailedMessage := "get subscribers failed"
+	owned, err := checkOwnsPublisher(pubId, ownerId, mongo)
+	if err != nil {
+		return createMessageResponse(false, deletePublisherFailedMessage)
+	}
+	if !owned {
+		return createMessageResponse(false, "publisher not found")
+	}
+	return getPublisherSubscribers(pubId, mongo)
 }

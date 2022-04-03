@@ -7,3 +7,13 @@ export type appPage = {
     title: string
     key: string
 }
+
+export type authedUser = {
+    id: string
+    name: string
+}
+
+export type statusMessage = {
+    message: string
+    type: string
+}
