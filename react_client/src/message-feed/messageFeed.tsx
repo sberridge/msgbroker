@@ -12,11 +12,11 @@ type message = {
     confirmed: boolean
 }
 
-interface MessagesStateInterface {
+type MessagesStateInterface = {
     messages: message[]
 }
 
-interface MessagesActionInterface {
+type MessagesActionInterface = {
     type: string
     value: message[]
 }
