@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Validator } from "../lib/Validator";
 import APIRequest from "../modules/APIRequest";
 
-import { statusMessage } from "./../types/types"
+import { formValidation, formValidationResponse, statusMessage } from "./../types/types"
 
 type newPublisherProps = {
     onPublisherCreated: ()=>void
@@ -24,7 +24,7 @@ const NewPublisherForm = (props:newPublisherProps) => {
 
     const form = document.getElementById('new_publisher_form') as HTMLFormElement;
 
-    const validate = async (data:object):Promise<[boolean, {[key:string]:string}]> => {
+    const validate = async (data:object):Promise<formValidationResponse> => {
         let validator = new Validator(data);
         validator.validateRequired("publisher_name");
         validator.validateMinLength("publisher_name", 1);
@@ -35,7 +35,7 @@ const NewPublisherForm = (props:newPublisherProps) => {
     const checkIsValidationField = (field:string): field is keyof typeof formValidation => {
         return field in formValidation;
     }
-    const handleValidationResult = (result:{[key:string]:string})=>{
+    const handleValidationResult = (result:formValidation)=>{
         let newState = {...formValidation};
         for(let key in newState) {
             if(checkIsValidationField(key)) {

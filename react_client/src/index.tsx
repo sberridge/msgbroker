@@ -8,6 +8,7 @@ import PublisherManager from "./publisher/publisherManager";
 import Menu from "./menu/menu";
 import { appPage, authedUser } from "./types/types";
 import MessageFeed from "./message-feed/messageFeed";
+import RegisterForm from "./auth/registerForm";
 
 
 const appPages:appPage[] = [
@@ -100,9 +101,14 @@ const App = () =>{
             <p>Please wait...</p>
         }
         {!isLoading && !isAuthed &&
-            <LoginForm
-                onLoggedIn={onLoggedIn}
-            ></LoginForm>
+            <div>
+                <LoginForm
+                    onLoggedIn={onLoggedIn}
+                ></LoginForm>
+                <RegisterForm
+                    onRegistered={onLoggedIn}
+                ></RegisterForm>
+            </div>
         }
         {authedUser &&
             <div>

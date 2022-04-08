@@ -125,6 +125,7 @@ const MessageFeed = (props:messageFeedProps) => {
             return <article key={message.id} className={`message ${message.confirmed ? "is-success" : "is-warning"}`}>
                 <div className="message-header">
                     <p>{message.publisherId}</p>
+                    <p>{message.confirmed ? "confirmed" : "awaiting confirmation"}</p>
                 </div>
                 <div className="message-body">
                     {message.payload}

@@ -17,3 +17,7 @@ export type statusMessage = {
     message: string
     type: string
 }
+
+export type formValidation = {[key:string]:string}
+
+export type formValidationResponse =  [boolean, formValidation]
