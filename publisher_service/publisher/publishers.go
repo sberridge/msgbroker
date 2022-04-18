@@ -15,8 +15,9 @@ import (
 )
 
 type bsonPublisher struct {
-	Id   string `bson:"_id"`
-	Name string `bson:"name"`
+	Id      string `bson:"_id"`
+	Name    string `bson:"name"`
+	OwnerID string `bson:"owner_id"`
 }
 type jsonPublisher struct {
 	Id   string `json:"id"`
@@ -44,7 +45,10 @@ func handleGetPublications(mongo *bezmongo.MongoService, id string, query url.Va
 	jResults := []jsonPublisher{}
 	results.All(ctx, &bResults)
 	for _, p := range bResults {
-		jResults = append(jResults, jsonPublisher(p))
+		jResults = append(jResults, jsonPublisher{
+			Id:   p.Id,
+			Name: p.Name,
+		})
 	}
 	result, err := json.Marshal(publishersResult{
 		Success:    true,
@@ -160,7 +164,13 @@ func deleteAllPublisherMessages(pubId string, mongo *bezmongo.MongoService) (int
 }
 
 func deleteExistingSubscriptions(pubId string, mongo *bezmongo.MongoService) (int64, error) {
-	filter := bson.D{{Key: "subscriptions", Value: bson.D{{Key: "$elemMatch", Value: bson.D{{Key: "publisher_id", Value: pubId}}}}}}
+	filter := bson.D{
+		{Key: "subscriptions", Value: bson.D{
+			{Key: "$elemMatch", Value: bson.D{
+				{Key: "publisher_id", Value: pubId},
+			}},
+		}},
+	}
 	update := bson.D{{Key: "$pull", Value: bson.D{{Key: "subscriptions", Value: bson.D{{Key: "publisher_id", Value: pubId}}}}}}
 	collection := mongo.OpenCollection(messageBrokerDb, "clients")
 	result, err := bezmongo.UpdateMany(collection, filter, update)
@@ -214,7 +224,10 @@ func getPublisherSubscribers(pubId string, mongo *bezmongo.MongoService) []byte 
 	jResults := []jsonPublisher{}
 	results.All(ctx, &bResults)
 	for _, p := range bResults {
-		jResults = append(jResults, jsonPublisher(p))
+		jResults = append(jResults, jsonPublisher{
+			p.Id,
+			p.Name,
+		})
 	}
 	result, err := json.Marshal(subscribersResult{
 		Success:     true,

@@ -18,5 +18,13 @@ func subscriberRoutes() []route {
 				c <- handleSubscribe(rd.Request.Body, rd.AuthID, rd.MongoService)
 			},
 		},
+		{
+			RoutePattern: "/subscriptions/{subscription_id}",
+			Method:       "DELETE",
+			Authenticate: true,
+			Func: func(rd routeData, c chan []byte) {
+				c <- handleDeleteSubscription(rd.DynamicParams["subscription_id"], rd.Request.Body, rd.AuthID, rd.MongoService)
+			},
+		},
 	}
 }

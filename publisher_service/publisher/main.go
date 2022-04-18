@@ -166,6 +166,7 @@ func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server 
 		}
 
 		if r.Method == "OPTIONS" {
+			(rw).Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
 			rw.Write(createMessageResponse(true, ""))
 			return
 		}

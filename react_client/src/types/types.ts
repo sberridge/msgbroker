@@ -18,6 +18,15 @@ export type statusMessage = {
     type: string
 }
 
+export type subscriptionDetails = {
+    id: string
+    publisher: {
+        id: string
+        name: string
+        owner_id: string
+    }
+}
+
 export type formValidation = {[key:string]:string}
 
 export type formValidationResponse =  [boolean, formValidation]

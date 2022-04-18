@@ -57,10 +57,7 @@ func handleAuth(body io.ReadCloser, bmongo *bezmongo.MongoService, session *sess
 	}
 	response, err := json.Marshal(authResponse{
 		Success: true,
-		Data: authResponseData{
-			Id:   clientStruct.Id,
-			Name: clientStruct.Name,
-		},
+		Data:    authResponseData(clientStruct),
 	})
 	if err != nil {
 		return createMessageResponse(false, failedAuthMessage)

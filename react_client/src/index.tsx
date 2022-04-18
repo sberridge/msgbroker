@@ -9,6 +9,7 @@ import Menu from "./menu/menu";
 import { appPage, authedUser } from "./types/types";
 import MessageFeed from "./message-feed/messageFeed";
 import RegisterForm from "./auth/registerForm";
+import SubscriptionManager from "./subscription/subscriptionManager";
 
 
 const appPages:appPage[] = [
@@ -126,6 +127,11 @@ const App = () =>{
                     <MessageFeed
                         authedUser={authedUser}
                     ></MessageFeed>
+                }
+                {currentPage == "subscriptions" &&
+                    <SubscriptionManager
+                        authId={authedUser.id}
+                    ></SubscriptionManager>
                 }
                 
             </div>

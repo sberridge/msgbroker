@@ -81,3 +81,13 @@ func UpdateOne(collection *mongo.Collection, filter bson.D, update bson.D) (*mon
 	defer cancel()
 	return collection.UpdateOne(ctx, filter, update)
 }
+
+func Aggregate(collection *mongo.Collection, stages []bson.D) (*mongo.Cursor, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	pipeline := mongo.Pipeline{}
+	for _, stage := range stages {
+		pipeline = append(pipeline, stage)
+	}
+	return collection.Aggregate(ctx, pipeline)
+}
