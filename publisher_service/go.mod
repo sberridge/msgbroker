@@ -2,7 +2,7 @@ module bezberr.com/messagebrokerpublisherservice
 
 go 1.17
 
-replace github.com/sberridge/bezmongo => ../../mongo
+replace github.com/sberridge/bezmongo => ../mongo
 
 require (
 	github.com/google/uuid v1.3.0

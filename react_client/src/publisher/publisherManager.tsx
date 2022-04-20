@@ -36,6 +36,10 @@ const PublisherManager = (props:publisherManagerProps) => {
         setSelectedPublisher(publisher);
     }
 
+    const onPublisherDeleted = ()=>{
+        setSelectedPublisher(null);
+    }
+
     return (
         <section className="section">
             <h2 className="title is-3">Publisher Management</h2>
@@ -56,6 +60,7 @@ const PublisherManager = (props:publisherManagerProps) => {
                     {selectedPublisher &&
                         <Publisher
                             publisher={selectedPublisher}
+                            onPublisherDeleted={onPublisherDeleted}
                         ></Publisher>
                     }                 
                 </div>

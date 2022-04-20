@@ -52,7 +52,6 @@ const App = () =>{
     useEffect(()=>{
         checkAuth().then((r)=>{
             if(r.success) {
-                console.log(r);
                 setIsAuthed(true);
                 setAuthedUser({
                     id: r.data.id,

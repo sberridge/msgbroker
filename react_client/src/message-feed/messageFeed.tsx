@@ -98,8 +98,7 @@ const MessageFeed = (props:messageFeedProps) => {
                     data: {
                         messages: confirmMessageIds
                     }
-                })
-                console.log('sent confirm'); 
+                });
                 break;
             case "messages_confirmed":
                 dispatch({
@@ -115,7 +114,6 @@ const MessageFeed = (props:messageFeedProps) => {
         ws = new WebSocket("ws://localhost:8001/ws");
         ws.onmessage = handleWSMessage
         return ()=>{
-            console.log('test');
             ws.close();
         }
     },[])

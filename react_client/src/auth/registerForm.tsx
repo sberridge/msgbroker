@@ -81,7 +81,6 @@ const RegisterForm = (props:registerFormProps) => {
 
     const handleRegisterSubmit = async (event:React.FormEvent) => {
         event.preventDefault();
-        console.log(form);
         const data = new FormData(form);
         const values = {
             name: data.get("name")
