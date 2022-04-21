@@ -155,7 +155,7 @@ func startServer(wg *sync.WaitGroup, mongo *bezmongo.MongoService) *http.Server 
 	routes = append(routes, subscriberRoutes()...)
 
 	http.HandleFunc("/", func(rw http.ResponseWriter, r *http.Request) {
-		rw.Header().Set("Access-Control-Allow-Origin", "http://localhost:4000")
+		rw.Header().Set("Access-Control-Allow-Origin", "http://localhost:8080")
 		rw.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		rw.Header().Set("Access-Control-Allow-Credentials", "true")
 		route, found := matchRoute(r.URL.Path, r.Method)

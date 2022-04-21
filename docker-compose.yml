@@ -7,6 +7,13 @@ services:
         container_name: message_broker
         networks:
             - message_broker_network
+    publisher_service:
+        build: ./publisher_service/.
+        ports:
+            - "8081:8081"
+        container_name: publisher_service
+        networks:
+            - message_broker_network
     message_broker_db:
         image: mongo:latest
         ports:
@@ -15,9 +22,9 @@ services:
         networks:
             - message_broker_network
     message_broker_client:
-        build: ./client/.
+        build: ./react_client/.
         ports:
-            - "3000:3000"
+            - "8080:8080"
         container_name: message_broker_client
         networks:
             - message_broker_network
