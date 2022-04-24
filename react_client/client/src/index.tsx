@@ -20,10 +20,6 @@ const appPages:appPage[] = [
     {
         title: "Subscriptions",
         key: "subscriptions"
-    },
-    {
-        title: "Message Feed",
-        key: "feed"
     }
 ];
 
@@ -117,21 +113,26 @@ const App = () =>{
                     currentPage={currentPage}
                     pages={appPages}
                 ></Menu>
-                {currentPage == "publishers" &&
-                    <PublisherManager
-                        authId={authedUser.id}
-                    ></PublisherManager>
-                }
-                {currentPage == "feed" &&
-                    <MessageFeed
-                        authedUser={authedUser}
-                    ></MessageFeed>
-                }
-                {currentPage == "subscriptions" &&
-                    <SubscriptionManager
-                        authId={authedUser.id}
-                    ></SubscriptionManager>
-                }
+                <div className="columns">
+                    <div className="column is-two-thirds">
+                        
+                        {currentPage == "publishers" &&
+                            <PublisherManager
+                                authId={authedUser.id}
+                            ></PublisherManager>
+                        }
+                        {currentPage == "subscriptions" &&
+                            <SubscriptionManager
+                                authId={authedUser.id}
+                            ></SubscriptionManager>
+                        }
+                    </div>
+                    <div className="column">
+                        <MessageFeed
+                            authedUser={authedUser}
+                        ></MessageFeed>
+                    </div>
+                </div>
                 
             </div>
         }

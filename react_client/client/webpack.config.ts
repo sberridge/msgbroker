@@ -41,7 +41,7 @@ const config:webpack.Configuration = {
     devServer: {
         static: path.join(__dirname, "build"),
         compress: true,
-        port: 4000
+        port: 8080
     },
 };
 
