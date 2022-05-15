@@ -10,6 +10,7 @@ type message = {
     publisherId: string
     payload: string
     confirmed: boolean
+    displayed: boolean
 }
 
 type MessagesStateInterface = {
@@ -26,23 +27,50 @@ const initialMessagesState:MessagesStateInterface = {
 };
 
 const messagesReducer = (state:MessagesStateInterface, action: MessagesActionInterface) => {
+
+    switch(action.type) {
+        case "add":
+            return {
+                messages: [...state.messages,...action.value]
+            };
+        case "confirm":
+            return {
+                messages: state.messages.map((message)=>{
+                    message.confirmed = true;
+                    return message;
+                })
+            }
+        case "display":
+            return {
+                messages: state.messages.map((message)=>{
+                    message.displayed = true;
+                    return message;
+                })
+            }
+        default:
+            return {
+                messages: [...state.messages]
+            }
+    }
     
-    if(action.type === "add") {
-        return {
-            messages: [...state.messages,...action.value]
+}
+
+
+const debounce = (func:CallableFunction,time:number) => {
+
+    let timer:number|null = null;
+
+    return ()=>{
+
+        if(timer) {
+            clearTimeout(timer);
         }
+        timer = setTimeout(()=>{
+            timer = null;
+            func();
+        },time)
     }
-    if(action.type === "confirm") {
-        return {
-            messages: state.messages.map((message)=>{
-                message.confirmed = true;
-                return message;
-            })
-        }
-    }
-    return {
-        messages: [...state.messages]
-    }
+
 }
 
 const MessageFeed = (props:messageFeedProps) => {
@@ -52,8 +80,8 @@ const MessageFeed = (props:messageFeedProps) => {
 
     const [state, dispatch] = useReducer(messagesReducer, initialMessagesState);
 
-
     let ws:WebSocket;
+    let showMessagesDebounce:()=>void
 
     const send = (data:any) => {
         ws.send(JSON.stringify(data));
@@ -85,7 +113,8 @@ const MessageFeed = (props:messageFeedProps) => {
                         id: message.id,
                         payload: message.payload,
                         publisherId: message.publisher_id,
-                        confirmed: false
+                        confirmed: false,
+                        displayed: false
                     });
                     confirmMessageIds.push({
                         id: message.id,
@@ -99,6 +128,7 @@ const MessageFeed = (props:messageFeedProps) => {
                         messages: confirmMessageIds
                     }
                 });
+                showMessagesDebounce();
                 break;
             case "messages_confirmed":
                 dispatch({
@@ -113,6 +143,12 @@ const MessageFeed = (props:messageFeedProps) => {
     useEffect(()=>{
         ws = new WebSocket("ws://localhost:8001/ws");
         ws.onmessage = handleWSMessage
+        showMessagesDebounce = debounce(()=>{
+            dispatch({
+                "type": "display",
+                "value": []
+            })
+        },100)
         return ()=>{
             ws.close();
         }
@@ -120,7 +156,7 @@ const MessageFeed = (props:messageFeedProps) => {
 
     const renderMessages = () => {
         return [...state.messages].reverse().map((message)=>{
-            return <article key={message.id} className={`message ${message.confirmed ? "is-success" : "is-warning"}`}>
+            return <article key={message.id} className={`${message.displayed ? "show" : ""} message ${message.confirmed ? "is-success" : "is-warning"}`}>
                 <div className="message-header">
                     <p>{message.publisherId}</p>
                     <p>{message.confirmed ? "confirmed" : "awaiting confirmation"}</p>

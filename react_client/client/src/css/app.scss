@@ -9,3 +9,56 @@ $family-primary: Roboto, "Segoe UI", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans
 .auth-user-details {
     flex-flow: column;
 }
+
+.app-page {
+    page-transition-tag: app-page;
+    contain: paint;
+}
+
+.message {
+    opacity: 0;
+    height: 0;
+    margin: 0;
+    overflow: hidden;
+    transition: all 0.5s;
+    &.show {
+        opacity: 1;
+        height: auto;
+        margin: 1.5rem;
+    }
+}
+
+@keyframes slide-to-left {
+    to { transform: translateX(-100%) }
+}
+
+@keyframes slide-from-right {
+    from { transform: translateX(100%) }
+}
+
+@keyframes slide-fade-to-left {
+    to { opacity: 0; transform: translateY(-20%) }
+}
+
+@keyframes slide-fade-from-right {
+    from { opacity: 0; transform: translateY(20%) }
+}
+
+
+::page-transition-outgoing-image(app-page) {
+    animation: 500ms ease-out both slide-to-left;
+}
+
+::page-transition-incoming-image(app-page) {
+    animation: 500ms ease-out both slide-from-right;
+}
+
+@media (min-width: 769px) {
+    ::page-transition-outgoing-image(app-page) {
+        animation: 300ms ease-out both slide-fade-to-left;
+    }
+    
+    ::page-transition-incoming-image(app-page) {
+        animation: 300ms ease-out both slide-fade-from-right;
+    }       
+}

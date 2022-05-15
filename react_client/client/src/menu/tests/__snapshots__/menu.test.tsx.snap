@@ -1,0 +1,55 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`should render 1`] = `
+<div
+  className="tabs"
+>
+  <ul>
+    <li
+      className=""
+    >
+      <a
+        onClick={[Function]}
+      >
+        Publishers
+      </a>
+    </li>
+    <li
+      className="is-active"
+    >
+      <a
+        onClick={[Function]}
+      >
+        Subscriptions
+      </a>
+    </li>
+  </ul>
+</div>
+`;
+
+exports[`should render 2`] = `
+<div
+  className="tabs"
+>
+  <ul>
+    <li
+      className="is-active"
+    >
+      <a
+        onClick={[Function]}
+      >
+        Publishers
+      </a>
+    </li>
+    <li
+      className=""
+    >
+      <a
+        onClick={[Function]}
+      >
+        Subscriptions
+      </a>
+    </li>
+  </ul>
+</div>
+`;

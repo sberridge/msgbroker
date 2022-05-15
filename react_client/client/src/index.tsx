@@ -74,7 +74,12 @@ const App = () =>{
 
     const changePage = (page:string) => {
         if(!pageMap.has(page)) return false;
-        setCurrentPage(page);
+        if(!(document as any).createDocumentTransition) {
+            setCurrentPage(page);
+            return true;
+        }
+        const transition = (document as any).createDocumentTransition();
+        transition.start(()=>setCurrentPage(page));
         return true;
     }
 
@@ -113,19 +118,21 @@ const App = () =>{
                     currentPage={currentPage}
                     pages={appPages}
                 ></Menu>
+                
                 <div className="columns">
                     <div className="column is-two-thirds">
-                        
-                        {currentPage == "publishers" &&
-                            <PublisherManager
-                                authId={authedUser.id}
-                            ></PublisherManager>
-                        }
-                        {currentPage == "subscriptions" &&
-                            <SubscriptionManager
-                                authId={authedUser.id}
-                            ></SubscriptionManager>
-                        }
+                        <div className="app-page">
+                            {currentPage == "publishers" &&
+                                <PublisherManager
+                                    authId={authedUser.id}
+                                ></PublisherManager>
+                            }
+                            {currentPage == "subscriptions" &&
+                                <SubscriptionManager
+                                    authId={authedUser.id}
+                                ></SubscriptionManager>
+                            }
+                        </div>
                     </div>
                     <div className="column">
                         <MessageFeed
@@ -133,7 +140,6 @@ const App = () =>{
                         ></MessageFeed>
                     </div>
                 </div>
-                
             </div>
         }
     </div>

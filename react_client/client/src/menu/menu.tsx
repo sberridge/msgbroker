@@ -7,9 +7,12 @@ type menuProps = {
 }
 
 const Menu = (props:menuProps) => {
+    const onClick = (page:string) => {
+        props.onPageChange(page);
+    }
     const renderPageLinks = () => {
         return props.pages.map((page)=>{
-            return <li key={page.key} className={props.currentPage == page.key ? "is-active": ""}><a onClick={()=>{props.onPageChange(page.key)}}>{page.title}</a></li>
+            return <li key={page.key} className={props.currentPage == page.key ? "is-active": ""}><a onClick={()=>{ onClick(page.key); }}>{page.title}</a></li>
         })
     }
     return (
